@@ -34,3 +34,19 @@ venv/
 .claude/
 .Codex/
 
+# Rebuildable local batch artifacts
+batch/previews/
+batch/ocr/
+batch/index/cache/
+batch/logs/
+batch/locks/
+batch/archive/
+batch/osm/*.osm
+batch/osm/*.osm.gz
+batch/osm/*.pbf
+batch/reviews/**/*.png
+batch/reviews/**/*.tif
+*.aux.xml
+*.sqlite3-wal
+*.sqlite3-shm
+*.part

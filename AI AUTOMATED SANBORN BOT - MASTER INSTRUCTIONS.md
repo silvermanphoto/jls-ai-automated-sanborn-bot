@@ -2,65 +2,93 @@
 
 ## Master operating instructions for georeferencing historic Sanborn sheets in QGIS
 
-**Version:** 1.9
+**Version:** 1.13
 **Created:** 2026-07-13  
-**Primary environment:** QGIS on macOS, controlled by Sol/Codex through Computer Use  
+**Primary environment:** Local macOS batch engine, with QGIS as the final in-memory display boundary
 **Default effort target:** Normal effort  
-**Primary objective:** Locate, download, and georeference a historic Sanborn raster against a current OpenStreetMap layer using a very small number of high-confidence, widely separated, surviving street-centerline intersections.
+**Primary objective:** Let Joel's Mac perform bulk acquisition, spatial OCR, street matching, reference rendering, affine warping, and file verification while ChatGPT supplies the small amount of geographic judgment needed to approve three strong controls.
 
 ---
 
 ## 0. Normal-effort execution summary
 
-This is the shortest safe route. Use the detailed sections only when a step fails or a judgment is uncertain.
+This is the shortest safe production route. `LOCAL BATCH ENGINE.md` gives the same sequence with complete copy-and-paste commands. The older manual QGIS Georeferencer sections remain below as recovery and historical guidance, not as the default batch method.
 
-If the requested 1911 sheet is not already local, complete the LOC discovery and download workflow in Section 19 before beginning the steps below.
-
-1. Record the source TIFF, output path, GCP path, project CRS, and protected `.qgz` modification time.
-2. Confirm the source and output filenames are different and the proposed output does not already exist.
-3. Open the source in QGIS Georeferencer and fit the whole sheet in view.
-4. If the sheet is one of the four completed 1911 sheets listed in Section 18, load its final `_cardinal_v2.points` file and skip control-point reconstruction.
-5. Otherwise locate the sheet citywide against **1921 Atlanta Kauffman Map_modified**; never assume the next sheet is in Summerhill or any other previously visited neighborhood.
-6. Identify exactly three distant, non-collinear, surviving street-centerline intersections against OSM and record them in one table.
-7. Capture modern coordinates in the project CRS, then annotate the three proposed source pixels as labeled crosshairs on the complete source sheet. Every crosshair must visibly sit at the center of its named intersection before any transformation is run.
-8. Use Helmert only as a rigid-scale diagnostic. Before accepting `Polynomial 1`, calculate the affine scale ratio and transformed-axis angle. Stop and recheck the source pixels if the scale ratio exceeds `1.15` or the axes differ from 90 degrees by more than 5 degrees without strong historical justification.
-9. Explicitly save `<source stem>_3points.points` by clicking **Save**.
-10. Prefer `tools/sanborn_georeference.py` for the deterministic warp and file audit. Otherwise set cubic resampling, lossless DEFLATE compression, a new `_georeferenced.tif` output, **Save GCP points**, and **Load in project when done**.
-11. Add the completed raster exactly once inside the root-level `1911 ATLANTA SANBORNS` folder directly beneath the 1911 index layer. Keep the index outside the folder and sort the individual sheets by printed tile number.
-12. Visually check the three anchors and at least one surviving non-control street against OSM.
-13. Blink the complete sheet against Kauffman to verify historical placement, orientation, and vanished streets.
-14. Verify the output and GCP files exist and the protected `.qgz` modification time is unchanged.
-15. Leave QGIS open. Never save or close the dirty master project unless the user separately authorizes it.
-
-Decision tree:
+One time, build the local references and catalogs:
 
 ```text
-Same source sheet and final Section 18 .points file exists?
-├─ Yes → Load source → Load final cardinal_v2.points → Verify settings → New output name → Run → OSM + Kauffman QA
-└─ No  → Locate neighborhood and street grid on Kauffman → Discover 3 surviving OSM intersections → Capture targets → Add GCPs
-         ├─ Helmert third-point residual is small → Keep Helmert → Run → QA
-         └─ Helmert mismatch is large but all 3 controls verify → Polynomial 1 → Run → QA
+python3 tools/sanborn_batch.py doctor
+python3 tools/sanborn_batch.py catalog
+python3 tools/sanborn_batch.py osm-refresh
+python3 tools/sanborn_batch.py index-build
+```
+
+For a sequential range:
+
+```text
+python3 tools/sanborn_batch.py add 154-160
+python3 tools/sanborn_batch.py work 154-160
+```
+
+For the recommended three-job M4 Max batch:
+
+```text
+python3 tools/sanborn_parallel.py 154-160 --jobs 3
+```
+
+The local worker then follows this guarded path:
+
+1. Download or verify the official JP2, preserve its checksum, and never overwrite a source or accepted result. Prove its printed number only through an exact Apple Vision reading in a top title corner, or stop for a recorded manual confirmation; Tesseract number hits are suggestion-only.
+2. Run spatial OCR at four rotations and preserve every useful street label's full-resolution source coordinates.
+3. Use approved historical aliases, local road-image geometry, and exact OSM shared nodes to propose intersections. Do not average OSM nodes or mistake a bridge crossing for a connected intersection.
+4. Compare every proposed target cluster to the independently read EPSG:3857 location seed from the georeferenced 1911 index, which supports tiles through 549. Clamp the tolerance to 250 meters and reject any control outside the seed's ±250-meter coordinate envelope. A missing, ambiguous, or visibly wrong seed requires a named, noted visual `confirm-seed` decision; never guess or alter the shared OCR index.
+5. Stop at `needs-chatgpt-review`. Joel or ChatGPT reviews names and ambiguity, selects a ranked triplet, and corrects a source pixel if the road image requires it.
+6. Export exactly three wide, non-collinear controls and record all corrections and rejected alternatives. An export distortion exception can waive only a real scale-ratio or axis-angle warning; every other safety gate remains absolute.
+7. Build the fully local, hash-locked packet in a new `batch/reviews/tile-NNNN/packet-TIMESTAMP/` folder: immutable control copy, source proof, named crosshairs, affine preview, local OSM roads and overlay, reprojected Kauffman crop and overlay, and one contact sheet. Never reuse an old packet. Affine warnings fail by default; a documented historical distortion requires `--allow-distortion` plus a nonblank note again at packet creation, and both become part of the hash with the exact warnings.
+8. Inspect the contact sheet at full size. Confirm all three source centers, surviving non-control streets against OSM, and the complete historical grid against Kauffman. A live QGIS session and network connection are not required.
+9. Approve the exact packet hash. Any changed source, point, reference, renderer, software/font provenance, limit, or artifact invalidates approval.
+10. Run `finish` for the full-resolution EPSG:3857 affine GeoTIFF, real alpha band, lossless DEFLATE compression, checksums, embedded source/control/affine/pipeline provenance, ledger, and schema-3 QGIS import manifest. A lone output or ledger from an interrupted two-file publish is preserved under a timestamped incomplete name before rebuilding. Resume requires both the live raster and ledger to verify.
+11. Dry-run `tools/sanborn_qgis.py`, then let ChatGPT send its verified payload to QGIS for final in-memory placement. Schema 3 binds the raster and ledger to the source, immutable controls, approval packet, all eight artifacts, local references, renderer/font inputs, and seed provenance. The code performs whole-project duplicate preflight, checks the exact project, index, CRS, group, raster, style, order, collapsed rows, and project-file modification time, rolls back live changes after a failure, and contains no save call.
+12. Leave QGIS open and unsaved. Never save or close the protected master project without Joel's explicit authorization in the same turn.
+
+State decision tree:
+
+```text
+queued -> downloading -> review-ready -> proposing -> needs-chatgpt-review
+       -> awaiting-approval -> approved -> verified
+
+number-check-required -> visually confirm printed number -> review-ready
+missing/ambiguous/wrong seed -> visually confirm index center -> confirm-seed -> propose again
+abandoned downloading/proposing -> resumed work acquires tile lock -> automatic safe recovery
+failed/stale/rejected -> inspect cause -> explicit reopen with note -> queued or review-ready
+bad local packet -> reopen to review-ready -> correct/export -> rebuild packet
+verified -> explicit reopen with note -> approved for revalidation, or an earlier state
 ```
 
 Hard stops:
 
-- credential prompt → user takes over;
-- overwrite prompt → choose a new filename;
-- large unexplained residual → do not generate output;
-- project-save or project-close prompt → do not proceed without the user;
-- reset/clear-GCP prompt → cancel the reset;
-- Save GCP dialog → click **Save**.
+- Library of Congress human-verification page or credential prompt → Joel takes over;
+- source, output, reference, points, packet, seed, or ledger hash mismatch → investigate rather than overwrite;
+- Apple Vision unavailable or exact printed title-corner number missing → preserve the review flag and require manual confirmation; never promote a Tesseract suggestion;
+- ambiguous or missing index seed, or a control outside its 250-meter envelope → preserve the review flag or reject the proposal;
+- unique high-confidence index OCR that looks wrong → stop and visually prove the correction before using `--override-high-confidence`;
+- existing manual seed correction → require `--replace-existing` and preserve its history;
+- unexplained scale, angle, mirroring, clustering, or triangle warning → do not warp;
+- missing `gdal_edit.py` → stop because the final GeoTIFF cannot receive embedded provenance;
+- project-save or project-close prompt → do not proceed without Joel;
+- one tile fails in a batch → isolate its log and state; allow other tiles to continue.
 
 ---
 
 ## 1. What this manual is designed to accomplish
 
-This is a self-contained runbook for repeating the successful georeferencing of a historic Sanborn fire-insurance sheet in QGIS. It is written so that a future Sol/Codex session can execute the job efficiently without rediscovering the workflow, re-researching already-known QGIS behavior, or endangering the master QGIS project.
+This is a self-contained runbook for georeferencing one sheet or hundreds of historic Sanborn fire-insurance sheets with a local Mac worker and a small ChatGPT review step. It is written so a future session can execute the job without rediscovering the workflow, re-researching known QGIS behavior, uploading large scans for cloud processing, or endangering the master QGIS project.
 
-The process has two modes:
+The process has three modes:
 
-1. **Same-sheet fast path:** Reopen the exact 1911 sheet already completed and load its saved GCP file. This should take very little reasoning.
-2. **New-sheet general path:** Discover three surviving intersections, collect modern coordinates, fit the appropriate global transform, save the GCPs, generate a new GeoTIFF, and visually verify it.
+1. **Local batch path, the default:** Prepare and propose one range sequentially or with three isolated local jobs, then review only the small proposal and contact sheet for each tile.
+2. **Same-sheet reconstruction path:** Reuse an accepted source-bound GCP file and verification record when reproducing a known result.
+3. **Manual QGIS recovery path:** Use the detailed Georeferencer sections only when the local proposal cannot resolve a genuinely unusual sheet or Joel deliberately requests an interactive reconstruction.
 
 This runbook deliberately separates:
 
@@ -69,6 +97,8 @@ This runbook deliberately separates:
 - diagnostic transformations from the final transformation;
 - control-point fit statistics from genuine visual validation;
 - safe local file creation from saving the mission-critical master project.
+- deterministic local evidence from ChatGPT's geographic judgment;
+- reference review from final QGIS layer presentation.
 
 ---
 
@@ -149,6 +179,7 @@ This is a critical learned rule.
 - Do not add a fourth point by habit.
 - A fourth point can force a least-squares compromise or reveal local historical/map distortion, but it must not be added to the final fit without a reason.
 - Never use high-order polynomial or thin-plate-spline warping merely to make uncertain streets appear to fit.
+- Affine warnings remain a hard stop unless the sheet itself has documented historical distortion and the local OSM and Kauffman packet independently agrees. In that case, use `--allow-distortion` only with a nonblank `--distortion-note`; the flag, note, and exact warnings must be hash-locked into the packet and carried into the final ledger.
 
 ### 2.6 Use street centerlines, not buildings or house numbers
 
@@ -175,13 +206,13 @@ This is a permanent output and display rule.
 
 ### 2.8 OpenStreetMap is ground truth; the 1921 Kauffman map is the required historical cross-check
 
-Use the reference layers in this order:
+Use the local reference evidence in this order:
 
 1. **OpenStreetMap has priority** wherever a street centerline or intersection unquestionably survives.
 2. **1921 Atlanta Kauffman Map_modified** is the canonical near-contemporary reference for streets that vanished, were severed by interstate construction, or cannot be located directly on OSM.
 3. The Kauffman map was itself georeferenced by hand. Treat it as a strong historical constraint, not as higher-accuracy ground truth than OSM.
 
-Before finalizing any 1911 Sanborn sheet:
+Before finalizing any 1911 Sanborn sheet, inspect the hash-locked local OSM and Kauffman packet. A live QGIS session is optional additional QA, not a condition for reference review. In either view:
 
 - compare it against both OSM and the Kauffman layer;
 - confirm latitude/longitude placement is plausible in the Kauffman street grid;
@@ -198,10 +229,11 @@ Summerhill was the first proving ground, not the geographic default. Future Sanb
 
 At the beginning of every new-sheet run:
 
-1. Read the historic street names and the shape of the street network from the Sanborn sheet.
-2. Turn on **1921 Atlanta Kauffman Map_modified** and locate the matching network anywhere in the city.
-3. Use Kauffman to establish the approximate neighborhood, rotation, latitude/longitude placement, vanished-street relationships, and cardinal orientation.
-4. Then move to OpenStreetMap and identify which intersections genuinely survive as modern ground-truth controls.
+1. Let spatial OCR record the historic street names and their source-image positions at four rotations.
+2. Read the independent approximate location from the georeferenced 1911 index. It is a wrong-neighborhood safeguard, never a final control.
+3. Use the local OSM database to find exact shared-node intersections for surviving streets, retaining divided-road or name ambiguity rather than averaging it away.
+4. Use the locally reprojected Kauffman crop to verify the historic network, vanished-street relationships, and orientation anywhere in the city.
+5. If the local evidence cannot resolve the sheet, use the manual QGIS view as a fallback and record why.
 
 Kauffman is always part of the workflow, including neighborhoods where modern redevelopment, expressways, stadiums, urban renewal, or street renaming removed most of the 1911 grid. It is the historical bridge between the unidentified Sanborn sheet and the modern city.
 
@@ -211,7 +243,14 @@ Do not promote Kauffman to modern survey accuracy. If fewer than three trustwort
 
 The root-level layer **1911 Sanborn Index Orthorectified — OSM 9-point fine-tuned (2026-07-14)** must be followed immediately by a root-level folder named **1911 ATLANTA SANBORNS**. The index remains outside the folder.
 
-Before adding a finished Sanborn raster:
+The preferred route is the verified manifest helper:
+
+```text
+python3 tools/sanborn_qgis.py batch/qgis-import/tile-0154.json --dry-run
+python3 tools/sanborn_qgis.py batch/qgis-import/tile-0154.json --emit-payload
+```
+
+The generated code verifies all inputs, inserts a cloned replacement group before removing an old group node, prepares the live session, and contains no project-save call. If manual placement is required instead:
 
 1. Confirm the index is at the root level and the `1911 ATLANTA SANBORNS` folder is immediately beneath it.
 2. In the Data Source Manager, select the one intended GeoTIFF and click **Add exactly once**. The Add button may give no visible acknowledgement and the dialog may remain open; do not click repeatedly.
@@ -234,7 +273,7 @@ The approved ordering pattern is:
 ...
 ```
 
-These are in-memory layer-tree changes. Never save the protected master project merely to preserve them.
+These are in-memory layer-tree changes. Never save the protected master project merely to preserve them. Never clear a populated group before replacement nodes exist; QGIS can unregister those live raster layers.
 
 ---
 
@@ -270,7 +309,7 @@ PROJECT_CRS=EPSG:3857 - WGS 84 / Pseudo-Mercator
 QGIS_APP=/Applications/QGIS.app
 ```
 
-Record the following before taking actions:
+For a normal local batch run, the queue, review record, georeferencing ledger, and QGIS manifest preserve these facts automatically. For a manual recovery run, record the following before taking actions:
 
 - source dimensions and file size;
 - whether the intended output already exists;
@@ -291,10 +330,14 @@ The following practices allow a normal-effort Sol run to succeed without excessi
 
 ### 4.1 Use the right information source
 
-- Use QGIS accessibility text for buttons, dialogs, checkboxes, text fields, and tables.
-- Use screenshots only for maps, street labels, intersection placement, visual alignment, or when the accessibility tree is incomplete.
-- Use read-only shell inspection for filenames, sizes, timestamps, and file existence.
-- Use the QGIS Python console for exact map-coordinate conversion.
+- Use the spatial OCR JSON for historic words and their full-resolution source boxes.
+- Use only the Apple Vision exact top-title-corner result to prove the downloaded printed sheet number. Treat whole-sheet Tesseract number matches as suggestions, never proof; use `confirm-number` after visual inspection when Vision cannot pass the gate.
+- Use the approved alias file for known historical renames; never turn one fuzzy OCR guess into a permanent rename.
+- Use the local OSM database for exact shared-node coordinates already stored in EPSG:3857.
+- Use the index seed JSON only as a broad geographic safeguard.
+- Use `review-contact-sheet.png` for source crosshairs, OSM alignment, and Kauffman alignment.
+- Use read-only local inspection for filenames, sizes, timestamps, hashes, and file existence.
+- Use QGIS accessibility text, screenshots, or the Python console only for the manual fallback and final in-memory layer preparation.
 - Browse the web only when street identity cannot be resolved from the historic sheet, OSM, the master map stack, and authoritative local sources already available.
 
 ### 4.2 Refresh UI state after every meaningful action
@@ -336,7 +379,7 @@ Avoid narrating every mouse movement or dialog click.
 
 ---
 
-## 5. Same-sheet fast path
+## 5. Manual QGIS same-sheet reconstruction fallback
 
 Use this when the source is an exact byte-for-byte copy of completed sheet 485, 486, 493, or 494. Section 18 is the authoritative reconstruction record.
 
@@ -368,7 +411,9 @@ Do not manually re-find these controls unless the saved final file is missing, c
 
 ---
 
-## 6. New-sheet general workflow
+## 6. Manual QGIS new-sheet recovery workflow
+
+Use this section only when the local proposal and packet workflow cannot resolve a genuinely unusual sheet or Joel asks for an interactive QGIS reconstruction. Record the reason in the queue. Do not bypass the local packet before final approval.
 
 ### Phase A — Preflight and protection
 
@@ -628,7 +673,7 @@ Normal scanned-map rotation does not require strong shear. A scale ratio greater
 
 ---
 
-## 8. Required QGIS transformation settings
+## 8. Manual QGIS transformation settings
 
 Open **Transformation Settings** and verify every field.
 
@@ -680,7 +725,7 @@ Before clicking **OK**, re-read the complete output path. The filename must not 
 
 ---
 
-## 9. Saving GCPs and running the transformation
+## 9. Manual QGIS GCP saving and transformation
 
 ### 9.1 Save GCPs explicitly before raster generation
 
@@ -728,11 +773,13 @@ High-compression processing can take tens of seconds. Progress may advance uneve
 
 ---
 
-## 10. Visual verification against OpenStreetMap and the 1921 Kauffman map
+## 10. Reference verification against OpenStreetMap and the 1921 Kauffman map
 
-Do not declare success merely because QGIS generated a file.
+Do not declare success merely because an affine transform generated a plausible file. The required review is the fully local `review-contact-sheet.png` and its hash-locked evidence. It contains the named source crosshairs, low-resolution transform, local OSM roads, reprojected Kauffman crop, and both overlays in the same EPSG:3857 extent. QGIS is not required to create, inspect, or approve this packet.
 
-### 10.1 Confirm the output layer loaded
+The QGIS checks in this section are the final display and layer-organization pass, or a manual recovery method. They supplement the local packet; they do not replace its approval lock.
+
+### 10.1 Confirm the approved output layer is prepared for QGIS
 
 The QGIS Layers panel should contain a checked raster layer named from the output, for example:
 
@@ -740,7 +787,7 @@ The QGIS Layers panel should contain a checked raster layer named from the outpu
 ! 1911 Sanborn 486 Shmuel Yankel B_georeferenced
 ```
 
-If it is missing:
+First prefer the schema-checked import manifest and `tools/sanborn_qgis.py`. If the layer is still missing:
 
 - verify the GeoTIFF exists;
 - add that GeoTIFF manually as a raster layer;
@@ -754,7 +801,7 @@ Then verify the layer-tree structure, not only visibility:
 - individual sheets are in ascending printed tile-number order;
 - its Global Opacity is 100%.
 
-### 10.2 Inspect all three anchors
+### 10.2 Inspect all three anchors in the local packet
 
 At each control point, compare the historic and modern centerlines:
 
@@ -786,7 +833,7 @@ Do not mistake genuine century-scale urban change for georeferencing error.
 
 ### 10.4 Verify the complete street grid against 1921 Kauffman
 
-Turn on **1921 Atlanta Kauffman Map_modified** and blink the Sanborn layer against it.
+Inspect the Kauffman panel and overlay in the local contact sheet. During optional final QGIS QA, the same comparison may also be blinked against **1921 Atlanta Kauffman Map_modified**.
 
 Check that:
 
@@ -797,7 +844,7 @@ Check that:
 
 If OSM and Kauffman disagree materially, do not average them blindly. Identify which control is genuinely surviving ground truth and which placement is historical inference.
 
-### 10.5 Blink the layer; never adjust Global Opacity
+### 10.5 In QGIS, blink the layer; never adjust Global Opacity
 
 For visual QA, toggle the new raster layer off and on so OSM is visible beneath it. Keep the raster's Global Opacity at 100% throughout the run.
 
@@ -1006,11 +1053,11 @@ For a new Sanborn sheet, use this ordered process.
 
 ### Step 1: Transcribe before searching
 
-Read all clear names from the historic sheet and place them into two parallel street families. This normally reveals the page rotation immediately.
+Begin with the spatial OCR record, which maps readings from four rotations back into full-resolution source coordinates. Group clear labels into street families, but do not assume every road is horizontal or vertical. A diagonal street requires an image-derived axis; its printed label center is not its intersection.
 
 ### Step 2: Start with a user-suggested survivor
 
-If the user names a likely unchanged intersection—such as Fulton and Pulliam—treat it as the first high-value candidate, but still verify it visually.
+If the user names a likely unchanged intersection—such as Fulton and Pulliam—treat it as the first high-value candidate, but still require an exact local OSM shared node and visual source-center verification.
 
 ### Step 3: Expand along the same historic street
 
@@ -1053,7 +1100,9 @@ The job is complete only when every item below is true.
 
 - [ ] A new georeferenced TIFF exists.
 - [ ] The output filename differs from the source filename.
-- [ ] The output TIFF has nonzero size and opens in QGIS.
+- [ ] The output TIFF has nonzero size and passes the local GDAL audit.
+- [ ] The output and adjacent `.georef.json` ledger both exist and match each other's paths, byte counts, and SHA-256 records; any interrupted lone artifact was preserved rather than overwritten or deleted.
+- [ ] `gdal_edit.py` embedded the source hash, immutable-control hash, affine-provenance signature, and `local-first-affine-v2` identity inside the GeoTIFF, and the live raster reports all four values.
 - [ ] The output CRS is correct.
 - [ ] Lossless compression settings were used unless the user requested otherwise.
 - [ ] The output has a fourth band whose color interpretation is Alpha.
@@ -1068,18 +1117,24 @@ The job is complete only when every item below is true.
 - [ ] Exactly three intended GCP rows are enabled for the default workflow.
 - [ ] The `.points` file exists and is nonempty.
 - [ ] The street names and target coordinates are recorded.
-- [ ] The GCP Save dialog was completed with **Save**.
+- [ ] The selected proposal, any source corrections, and every rejected alternative have persistent records.
+- [ ] The selected `.points` file was copied into a new `batch/reviews/tile-NNNN/packet-TIMESTAMP/approved-controls.points`; that immutable copy's checksum matches the approved packet and final ledger.
+- [ ] Apple Vision verified the exact printed number in a top-left or top-right title corner, or a manual `confirm-number` note records the visual proof. A Tesseract suggestion alone was not accepted.
 
 ### Alignment quality
 
 - [ ] All three control intersections align visually.
 - [ ] A labeled full-sheet source proof shows every GCP crosshair exactly centered on its named intersection.
+- [ ] A unique index-location seed places the controls in the expected Atlanta neighborhood. Any missing, ambiguous, or visibly wrong OCR seed has a named, noted manual override derived from the verified index preview or an EPSG:3857 map coordinate.
+- [ ] Every proposed target control and the final transformed footprint passed the clamped 250-meter seed envelope.
 - [ ] The affine scale ratio is no greater than `1.15`, and the transformed axes fall within `85–95°`, unless documented historical evidence justifies the exception.
 - [ ] Surviving non-control street segments are plausible.
-- [ ] The complete street grid was blink-checked against **1921 Atlanta Kauffman Map_modified**.
+- [ ] The complete street grid passed the local OSM and **1921 Atlanta Kauffman Map_modified** contact sheet.
+- [ ] The source, points, references, renderer and software provenance, and all required packet artifacts match the approval hash.
 - [ ] Historically east–west streets remain east–west and historically north–south streets remain north–south.
 - [ ] No affine shear or rubber-banding was accepted merely because three controls fit exactly.
 - [ ] No mistaken mirroring or 90-degree orientation error remains.
+- [ ] Any accepted affine warning has a nonblank historical-evidence note, exact warning list, packet hash, final override flag, and ledger note; otherwise no distortion override was used.
 - [ ] Interstate-altered areas are interpreted as historical change, not automatically as bad control.
 
 ### Project safety
@@ -1088,6 +1143,8 @@ The job is complete only when every item below is true.
 - [ ] Protected `.qgz` modification time is unchanged.
 - [ ] QGIS project Save was not used.
 - [ ] QGIS remains open if the in-memory project is dirty.
+- [ ] A schema-3 QGIS import manifest exists and binds the raster, ledger, source, immutable controls, review and approval records, all eight packet artifacts, local references, renderer/font inputs, and seed provenance.
+- [ ] QGIS whole-project same-number/different-path preflight passed before mutation; if a live preparation failed, prior layer-tree and renderer state was restored.
 - [ ] Exactly one new raster layer is inside `1911 ATLANTA SANBORNS` in ascending tile-number order.
 - [ ] Every raster entry inside `1911 ATLANTA SANBORNS` is collapsed so no RGB band lists are left open.
 - [ ] `1911 ATLANTA SANBORNS` is immediately beneath the root-level 1911 index, and the index remains outside the folder.
@@ -1103,15 +1160,16 @@ The final report should be concise and include:
 3. three intersections used;
 4. transformation type and target CRS;
 5. visual verification result;
-6. explicit statement that the source was not overwritten;
-7. explicit statement that the protected `.qgz` was not saved or modified on disk;
-8. confirmation that exactly one new layer is inside `1911 ATLANTA SANBORNS` in ascending numeric order;
-9. note that the new layer is loaded only in the current QGIS session unless project saving is later authorized.
+6. local review packet and approval result;
+7. explicit statement that the source was not overwritten;
+8. explicit statement that the protected `.qgz` was not saved or modified on disk;
+9. QGIS manifest path and, if executed, confirmation that exactly one new layer is inside `1911 ATLANTA SANBORNS` in ascending numeric order;
+10. note that any prepared layer exists only in the current QGIS session unless project saving is later authorized.
 
 Suggested handoff:
 
 ```text
-Completed. I created <output>, saved the three controls in <points>, and loaded exactly one new raster over OSM inside `1911 ATLANTA SANBORNS` in ascending tile order. The controls were <A>, <B>, and <C>, using Polynomial 1 in <CRS>. The labeled source crosshairs, affine diagnostics, anchor intersections, and surviving non-control street grid all passed. The original TIFF was not overwritten, and the protected master .qgz was not saved or modified on disk. The layer is present in the current QGIS session only.
+Completed. The Mac created <output>, saved the three controls in <points>, and passed the hash-locked local OSM and Kauffman packet. The controls were <A>, <B>, and <C>, using a three-point affine transform in <CRS>. The source crosshairs, index-location safeguard, affine diagnostics, anchor intersections, and surviving non-control street grid passed. The original scan was not overwritten. The QGIS manifest is <manifest>. <If executed: exactly one raster is prepared inside `1911 ATLANTA SANBORNS` in ascending tile order.> The protected master .qgz was not saved or modified on disk.
 ```
 
 ---
@@ -1125,13 +1183,13 @@ Act as the AI AUTOMATED SANBORN BOT. Read and follow the master instruction file
 
 /Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/AI AUTOMATED SANBORN BOT - MASTER INSTRUCTIONS.md
 
-Georeference the supplied Sanborn TIFF in the currently open QGIS project against the active OpenStreetMap layer. Treat the source TIFF and JLS Master Map File.qgz as protected: never overwrite the TIFF and never save or modify the .qgz on disk. Use exactly three strong, distant, non-collinear surviving street-centerline intersections by default. Narrate the street-identification decisions, not every UI click. Save a new *_georeferenced.tif and a *_3points.points file, verify the overlay visually, verify the protected project timestamp is unchanged, and leave QGIS open.
+Use the local-first version 1.13 workflow. Run the local batch worker sequentially or with three jobs, and stop at the ChatGPT review boundary. Treat every source scan and `JLS Master Map File.qgz` as protected: never overwrite a scan and never save or close the `.qgz` unless Joel explicitly authorizes it in this turn.
 
-Before finalizing, verify the entire 1911 street grid against **1921 Atlanta Kauffman Map_modified**. OSM remains ground truth wherever an intersection survives; Kauffman is the canonical historical cross-check for vanished streets, latitude/longitude plausibility, and east–west/north–south orientation. Reject rubber-banding or affine shear caused by a doubtful control.
+Prove the printed tile through the Apple Vision top-title-corner gate; Tesseract number hits are suggestions only and require manual confirmation if Vision does not pass. Use spatial street OCR, approved historical aliases, image-derived street axes, exact shared OSM nodes, and the independent georeferenced-index location seed to propose controls. Clamp the seed and every target-control envelope to 250 meters. A missing, ambiguous, or visibly wrong seed requires `confirm-seed` with exactly one verified preview-pixel or EPSG:3857 map-coordinate input, a reviewer, and a note; overriding a unique high-confidence OCR seed requires deliberate visual confirmation. Preserve ambiguous names and divided-road nodes for review. Select exactly three strong, distant, non-collinear controls by default, and correct any source center before approval.
 
-Every output must include a real destination alpha band so rotation/warp-created empty areas are transparent rather than black. Never treat RGB black as nodata. In QGIS, keep Global Opacity at 100% at all times, apply Layer Rendering values Brightness +50, Gamma 1.2, and Contrast +20, and blink layer visibility for comparisons.
+Build and inspect the fully local, hash-locked OSM and Kauffman contact sheet in a new timestamped packet folder with its own immutable control copy. Never reuse an older packet. A live QGIS connection is not required for reference review. OSM remains ground truth wherever an intersection survives; Kauffman is the historical cross-check for vanished streets and orientation. Reject rubber-banding, wrong-neighborhood fits, or affine shear caused by a doubtful point. Permit a documented historic-sheet distortion only with `--allow-distortion` and a nonblank note hash-locked with the exact warnings; export and packet creation each require their own explicit flag and note.
 
-The sheet may be anywhere in Atlanta. Begin every new sheet by locating its street network against **1921 Atlanta Kauffman Map_modified**; do not assume Summerhill. If this is one of the already-completed 1911 sheets 485, 486, 493, or 494, use the Section 18 same-sheet fast path and load its final `_cardinal_v2.points` file instead of rediscovering the intersections.
+After approval, run the deterministic local finish step for the EPSG:3857 GeoTIFF, real alpha band, lossless compression, checksums, embedded source/control/affine/pipeline provenance, ledger, and schema-3 QGIS manifest. Dry-run the QGIS helper before using its emitted payload. Require the complete packet and seed evidence chain, whole-project duplicate preflight, rollback on live failure, the exact index and group order, numeric tile order, 100% opacity, Brightness +50, Gamma 1.2, Contrast +20, alpha band 4, and collapsed raster rows. Leave the project open and unsaved.
 ```
 
 ---
@@ -1348,7 +1406,7 @@ The transferable insight is that georeferencing is not merely point matching. It
 
 ## 19. Finding and downloading a 1911 Atlanta Sanborn sheet from the Library of Congress
 
-This is the permanent acquisition workflow. It begins with Joel's orthorectified QGIS index, routes the requested sheet to one of four Library of Congress volumes, downloads the compressed full-resolution JPEG2000 file, and preserves enough provenance to repeat the result without searching again.
+The default acquisition workflow is now `catalog`, `add`, and `work` in `tools/sanborn_batch.py`. It caches all four official volume catalogs, resolves the printed tile to the exact resource, resumes and verifies the full-resolution JPEG2000, checks the printed number locally, and records provenance in the queue. The manual details below remain the recovery method and explain why those safeguards exist.
 
 ### 19.1 Permanent LOC bookmark
 
@@ -1360,13 +1418,15 @@ https://www.loc.gov/collections/sanborn-maps/?dates=1911&fa=location_state:georg
 
 The LOC states that its online Sanborn Maps Collection is in the public domain and free to use and reuse. Credit the Library of Congress Geography and Map Division, Sanborn Maps Collection when publishing the material.
 
-### 19.2 The QGIS index is the routing key
+### 19.2 The georeferenced index is the location safeguard and manual routing key
 
-The QGIS layer named **1911 Sanborn Index Orthorectified** is the key to the individual LOC sheets.
+The exact source is **1911 Sanborn Index Orthorectified — OSM 9-point fine-tuned (2026-07-14)** in QGIS and `1911 Sanborn Index Orthorectified_OSM_9point_finetuned_2026-07-14.tif` on disk. It is an EPSG:3857 georeferenced raster, not an attribute table.
+
+`index-build` uses Apple's local Vision recognizer on overlapping disposable crops, accepts printed tile numbers through 549, clusters repeated readings, and transforms unique readings through the index geotransform. The result is an approximate independent neighborhood safeguard. It never supplies a final GCP. Every selected seed tolerance is clamped to at most 250 meters; each proposed target control must remain within the seed's ±250-meter x/y envelope, and the final warp receives the same bounding box and seed-distance gate.
 
 - The printed number on the orthorectified index corresponds to the printed Sanborn sheet number.
-- Use the index to locate the requested number geographically before opening LOC.
-- Record the approximate QGIS coordinate under the requested number when useful for recovery.
+- Use the local seed to check the proposed neighborhood before approving controls.
+- Record the approximate coordinate, OCR quality, and index provenance automatically; ambiguous or missing readings remain review flags.
 - The index's four colors route the sheet to exactly one LOC volume.
 
 | Index color | City section | LOC volume | Item page |
@@ -1376,11 +1436,57 @@ The QGIS layer named **1911 Sanborn Index Orthorectified** is the key to the ind
 | Blue | Southwest | 3 | `https://www.loc.gov/item/sanborn01378_008/` |
 | Yellow | Southeast | 4 | `https://www.loc.gov/item/sanborn01378_009/` |
 
-Each 1911 sheet occurs in only one volume. Do not search all four volumes after the index color has established the correct one.
+Each 1911 sheet occurs in only one volume. The cached catalog normally establishes that volume without manual color reading. Use the color table only for recovery or independent confirmation.
+
+#### 19.2.1 Reviewed recovery for a missing, ambiguous, or wrong seed
+
+The seed is a neighborhood guard, not a final control, but packet creation and final warping require one unique selected seed. If index OCR misses the tile, produces competing locations, or selects a location that is visibly wrong, open the exact preview recorded by `index-build`, find the center of the printed tile, and use the queue-aware wrapper:
+
+```text
+python3 tools/sanborn_batch.py confirm-seed 154 \
+  --preview-pixel PREVIEW_X PREVIEW_Y \
+  --reviewer "Joel" \
+  --note "Visually confirmed the center of printed Tile 154 on the saved index preview"
+```
+
+`--preview-pixel X Y` means an X/Y pixel in that hash-verified preview. It is not a source-Sanborn pixel, screenshot coordinate, QGIS-canvas coordinate, or full-resolution index pixel. The helper scales it to the full index raster and applies the raster's recorded EPSG:3857 geotransform.
+
+If the reviewed location is already known in map coordinates, use the mutually exclusive form:
+
+```text
+python3 tools/sanborn_batch.py confirm-seed 154 \
+  --map-coordinate EPSG3857_X EPSG3857_Y \
+  --reviewer "Joel" \
+  --note "Visually confirmed this EPSG:3857 center against the georeferenced index"
+```
+
+`--map-coordinate` accepts EPSG:3857 only, not longitude/latitude. The command maps it back into the verified index raster and rejects a location outside that raster. Exactly one coordinate form is required. The reviewer and note must be nonblank because the command records a visual evidence decision. Tolerance defaults to 250 meters; a smaller positive value may be given with `--tolerance`, but more than 250 meters is forbidden.
+
+The wrapper holds the per-tile lock and, when the tile is queued, refreshes the queue's seed context. It does not modify `batch/index/tile-location-seeds.json`. It writes an atomic per-tile override such as `batch/index/tile-location-seeds-manual-overrides/tile-0154.json`, including the base OCR evidence, index-raster identity, method, reviewer, note, timestamp, and derived coordinate.
+
+- Use `--replace-existing` only to supersede an existing manual record; the earlier decision remains in history.
+- Use `--override-high-confidence` only when the index is visually checked and proves that one unique high-confidence OCR seed is wrong.
+- Use both flags when replacing a manual decision whose base OCR seed is high-confidence.
+- If the tile is awaiting approval, approved, or verified, reopen it to `review-ready` or `queued` first. A changed seed invalidates prior proposal and packet evidence.
+- After confirmation, rerun `python3 tools/sanborn_batch.py propose 154`.
+
+The lower-level index command performs the same reviewed override but does not refresh the queue:
+
+```text
+python3 tools/sanborn_index.py confirm \
+  batch/index/tile-location-seeds.json 154 \
+  --index-raster "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/Stage 1 -Orthorectified Atlanta Maps to print/1911 Sanborn Index Orthorectified_OSM_9point_finetuned_2026-07-14.tif" \
+  --preview-pixel PREVIEW_X PREVIEW_Y \
+  --reviewer "Joel" \
+  --note "Visually confirmed the printed Tile 154 center on the recorded preview" \
+  --tolerance 250
+```
+
+This underlying command also accepts the mutually exclusive `--map-coordinate X Y`, plus `--override-dir`, `--replace-existing`, and `--override-high-confidence` under the same rules. Prefer the batch wrapper during normal production so the queue and override stay synchronized.
 
 ### 19.3 Compass-first orientation is mandatory
 
-The compass rose on **1911 Sanborn Index Orthorectified** is true north. Individual Sanborn sheets may be scanned or drawn with north pointing in another direction.
+The compass rose on the georeferenced 1911 index is true north. Individual Sanborn sheets may be scanned or drawn with north pointing in another direction. The local spatial OCR tests four rotations without altering the source; use the manual steps below only for visual recovery.
 
 Before reading street geometry or choosing controls:
 
@@ -1548,9 +1654,9 @@ The final layer was added exactly once at the root level after `1906 Race Massac
 
 ---
 
-## 20. Ten-minute and five-minute operating target
+## 20. Local batch operating target
 
-The deterministic warp is no longer the bottleneck. `tools/sanborn_georeference.py` converts a reviewed three-point QGIS file into a checked full-resolution GeoTIFF, alpha band, checksums, and audit ledger. On the Tile 474 rehearsal it completed the full 7735 × 9239 output in about eleven seconds and reproduced all four accepted pixel checksums.
+The deterministic warp is no longer the bottleneck. `tools/sanborn_georeference.py` converts a reviewed three-point control file into a checked full-resolution GeoTIFF, alpha band, checksums, and audit ledger. On the final tightened Tile 474 regression it completed the full 7735 × 9239 output in about 5.5 seconds and reproduced all four accepted pixel checksums.
 
 ### 20.1 What the helper automates
 
@@ -1566,74 +1672,93 @@ The deterministic warp is no longer the bottleneck. `tools/sanborn_georeference.
 
 ### 20.2 Realistic time budget
 
-For an ordinary sheet with a clear compass and three unambiguous surviving controls, five minutes is realistic:
+The bounded Atlanta OSM download and index and the georeferenced-index OCR are one-time batch costs. Per-tile source download time depends on the Library of Congress and file size. On the real Tile 154 scan, first-run OCR including native Apple Vision helper compilation took about 17 seconds; an earlier warm spatial-OCR run took 4.8 seconds. The tightened 250-meter proposal ranked Auburn × Butler, Auburn × Fort, and Houston/Dobbs × Butler first in about 10 seconds, and the existing local packet was visually inspected. Its exercised final warp took about 5 seconds and produced 6587 × 7845 RGBA, SHA-256 `6b3162c42e1d414b9d0ca8213352bd33b6436baecc3576f4c028fa4402aacc6c`, with band checksums `23168 / 61645 / 40864 / 26750` and an unchanged protected project.
 
-| Stage | Target |
-|---|---:|
-| Read printed number, compass, and street names; locate on the Kauffman map | 60–90 seconds |
-| Confirm three widely separated controls against OSM and record source/target points | 90–150 seconds |
-| Run the helper and load exactly one root-level layer | 20–40 seconds |
-| Blink OSM and Kauffman, check a non-control street, verify hierarchy | 60 seconds |
+Those measurements are evidence, not deadlines. The variable stage is the small ChatGPT or Joel review: street identity, ambiguous OSM nodes, diagonal source centers, and the complete historical grid. Three concurrent local jobs reduce idle time across hundreds of tiles while preserving that review boundary.
 
-Ten minutes is the reliable production target across normal sheets because it leaves room for one rejected control or one name change. Five minutes is a fast-path target, not a quota.
-
-Tile 474 is the kind of sheet that may exceed five minutes: the third surviving modern control was missing, Rinehardt/Reinhardt was a false friend, and the Kauffman map had to distinguish a historically valid street relationship from modern ground truth. Do not trade away that reasoning to meet a clock.
+Tile 474 is the controlled-distortion regression. Its packet creation and approval exercised hash-locked warnings for scale ratio `1.3393` and axis angle `98.500°`, a written evidence note, 67 local OSM ways, and the Kauffman crop. Its tightened 250-meter-envelope warp took about 5.5 seconds and produced 7735 × 9239 RGBA, SHA-256 `f1de82562647d0ecb27b1815da9c8056329b084565e0747c6c8b82b5e7852083`, with band checksums `55125 / 14515 / 65108 / 51289` and an unchanged protected project. Its third surviving modern control was missing, and the Kauffman map had to distinguish historical evidence from modern ground truth. Do not trade away that reasoning to meet a clock.
 
 ### 20.3 Where model speed helps—and where it does not
 
-A faster reasoning model can transcribe labels, search OSM/Kauffman, and narrate choices more quickly. The larger savings come from removing fragile GUI repetition:
+A faster reasoning model can review labels, aliases, and candidate evidence more quickly. The larger savings come from moving every deterministic operation onto the Mac:
 
 - acquire and checksum the LOC source through deterministic file tools;
-- keep a single compact street/control table instead of re-reading screenshots;
+- preserve spatial OCR, proposed controls, corrections, and rejected alternatives instead of re-reading screenshots;
 - let code perform the warp, alpha, compression, and validation;
-- use QGIS only for street judgment, visual blinking, and final layer placement;
-- click Add once, close the dialog, and verify the root-level layer count before taking another action.
+- render the local OSM and Kauffman evidence packet without a network or live QGIS session;
+- use QGIS only for final in-memory layer presentation after the geographic review has passed.
 
 The irreducible task is historical identity: deciding whether a street truly survived, changed name, was severed, or merely resembles another street. That judgment remains the reason OSM and Kauffman are both mandatory.
 
-### 20.4 Future automation priority
+### 20.4 Completed automation architecture
 
-The next useful improvement is a three-panel comparison workspace: source crop on the left, Kauffman street grid in the center, and OSM on the right, with one table for source pixels, target coordinates, evidence type, confidence, and rejected candidates. It should propose candidates but never silently promote a Kauffman point to OSM ground truth. Once three controls are approved, the existing helper already completes the rest in seconds.
+The planned comparison workspace is now a completed local evidence pipeline. It does not upload maps and it does not need a live QGIS session for geographic review.
 
-The build-ready specification is preserved in:
+- `tools/sanborn_osm.py` downloads or imports a bounded extract, indexes named ways, and returns exact shared-node intersections with WGS 84 and EPSG:3857 coordinates.
+- `tools/sanborn_index.py` uses Apple's local Vision recognizer on overlapping crops of the georeferenced index, supports tiles through 549, produces 250-meter wrong-neighborhood safeguards, and writes reviewed per-tile manual overrides without changing the shared OCR index.
+- `tools/sanborn_ocr.py` runs four local Tesseract rotations for street suggestions, records label boxes in the original scan's pixel coordinates, and uses a separate exact Apple Vision top-title-corner gate for printed-sheet identity.
+- `tools/sanborn_geometry.py` estimates horizontal, vertical, and diagonal street axes from the road image so a printed label center is not mistaken for an intersection.
+- `tools/sanborn_controls.py` combines OCR, approved aliases, image axes, exact OSM nodes, and the independent index seed into ranked three-control proposals. It preserves ambiguity, corrections, and rejected alternatives. Its distortion export exception can waive only scale-ratio or axis-angle warnings; every hard gate remains non-overridable.
+- `tools/sanborn_review.py` makes each review in a new timestamped packet folder with an immutable control copy, labeled source proof, affine preview, local OSM render and overlay, reprojected Kauffman crop and overlay, and four-panel contact sheet.
+- `tools/sanborn_georeference.py` performs the final full-resolution affine warp and audit. It requires `gdal_edit.py` to embed source, control, affine, and pipeline identities in the GeoTIFF itself.
+- `tools/sanborn_qgis.py` validates schema-3 manifests across the complete approved evidence chain and emits a safe, repeatable live-QGIS preparation payload with whole-project identity preflight, rollback, exact group/style/collapsed-row checks, and no save call.
 
-```text
-work/instructions/THREE_PANEL_COMPARISON_PLAN.md
-```
+The local packet never promotes Kauffman to modern OSM ground truth. Kauffman supplies the historical grid check; exact surviving OSM intersections supply modern targets. The packet must pass before the full-resolution helper runs.
+
+### 20.5 Local batch engine version 1.13
+
+Version 1.13 adds the complete production path around those local components:
+
+- `tools/sanborn_batch.py` maintains a resumable SQLite queue with declared legal states and per-tile cross-process locks; caches LOC catalogs; performs conservative resumable downloads; automatically recovers abandoned downloading or proposing claims on resumed `work`; wraps reviewed seed confirmation; builds 250-meter-clamped proposals; records corrections and rejections; creates versioned packets; verifies approvals; preserves interrupted output/ledger publishes; verifies embedded GeoTIFF provenance on resume; finishes outputs; and writes schema-3 QGIS manifests.
+- `tools/sanborn_parallel.py` runs three independent tiles by default, gives each one a log, and contains a failure to that tile while the rest continue. One shared pacer enforces the default two-second interval between actual child-process launches; each one-tile child receives zero internal delay.
+- `config/street_aliases.json` contains only reviewed historical renames with evidence. Fuzzy text can propose a match but cannot silently change the alias record.
+
+The approval lock is recomputed from the current source, immutable packet controls, labels, CRS, affine limits and measurements, any distortion-override flag/note/warnings, local OSM database and metadata, Kauffman raster, index-seed evidence, renderer code, software and font provenance, and all required image artifacts. It is checked at approval and immediately before the full warp. Any change invalidates approval.
+
+Controls are rejected when they are mirrored, too clustered, nearly collinear, outside EPSG:3857, outside the unique seed's 250-meter envelope, have a triangle smaller than 2% of the scan, have too little horizontal or vertical span, exceed a `1.15` scale ratio, or put the axes outside `85–95°`. Only the last two shape warnings may proceed through the documented, hash-locked historic-distortion exception.
+
+The final staged suite passes 122 tests in 26.9 seconds, including a real GDAL warp whose embedded GeoTIFF provenance passed batch resume verification. Coverage includes cross-process locking, abandoned-state recovery, Apple Vision identity gating, manual seed confirmation, seed-envelope enforcement, controlled distortion, versioned packets, two-file publish recovery, schema-3 manifest provenance, whole-project QGIS conflicts, and live rollback helpers.
+
+Batch, georeference, and QGIS hashing use a process-local cache keyed by canonical path, device, inode, size, modification time, and change time. This avoids repeatedly reading an unchanged shared Kauffman raster or other large evidence during one run. It is a speed optimization, not a trust shortcut: a changed identity forces rehashing and a mid-read change aborts the operation.
+
+The local worker is the mechanical engine, not a substitute for geographic judgment. ChatGPT or Joel must still confirm street identity, ambiguous nodes, all three source centers, a surviving non-control street, and the full Kauffman grid. That judgment now happens against a compact, reproducible local packet rather than through repeated cloud uploads and live QGIS manipulation.
 
 ---
 
-## 21. Three-panel comparison plan: permanent operating decisions
+## 21. Local comparison and QGIS preparation: permanent operating decisions
 
-The three-panel workspace is intended to shorten street discovery without weakening historical judgment.
+1. The source scan remains in original pixel coordinates until three reviewed controls link it to EPSG:3857.
+2. OSM and Kauffman are rendered to the same affine-preview extent. OSM is blue modern road evidence; Kauffman is the co-registered historical grid.
+3. Every candidate records historic and modern names, source and target coordinates, name-resolution method, source-geometry method, OSM node and way evidence, ambiguity, affine diagnostics, seed distance, and review need.
+4. Exact shared OSM nodes remain separate. Multiple divided-road nodes are never averaged into a synthetic control.
+5. Every historical alias must have explicit evidence. Rejected candidates and false friends remain in the queue history.
+6. Exactly three wide, non-collinear controls remain the default. Source corrections require a note and trigger a new affine safety check.
+7. The index seed is an independent geographic guard. It cannot become a GCP. Missing, ambiguous, or visibly wrong OCR seeds require an explicit manual override with one coordinate method, reviewer, note, verified index provenance, and no modification to the shared OCR index.
+8. Every local contact sheet is created in a new `batch/reviews/tile-NNNN/packet-TIMESTAMP/` folder with `approved-controls.points`. All inputs and artifacts are hash-locked. A stale or edited packet cannot be approved or finished, and a corrected attempt never reuses the old folder.
+9. Per-tile locks serialize every file-changing operation. Resumed `work` may recover only abandoned `downloading` and `proposing` claims automatically; failed, rejected, and stale evidence needs an explicit noted `reopen`.
+10. A withdrawn packet may return from `awaiting-approval` or `approved` to `review-ready`. A verified tile may explicitly reopen to `approved` for revalidation, or to `review-ready`/`queued` for earlier rebuilding.
+11. QGIS receives only finished, approved schema-3 manifests. The helper verifies the raster, ledger, source, immutable controls, review, approval, eight artifacts, OSM, Kauffman, renderer/font, and seed provenance; scans the whole project for same-number/different-path conflicts before mutation; clones a populated group before moving it; snapshots prior state for rollback; is safe to rerun; and never saves the project.
+12. The final GeoTIFF contains its own source hash, controls hash, affine signature, and pipeline identity written by `gdal_edit.py`. Resume verifies those live metadata values as well as the ledger, pixels, CRS, compression, extent, seed envelope, and protected-project record. A ledger alone cannot certify a raster.
+13. Stable-file hash caching may avoid rereading unchanged large evidence within one process, but it is keyed to full file identity and never survives a changed stat fingerprint.
 
-Permanent decisions:
+Tile 154 is the exact printed-title, 250-meter proposal, and ordinary-warp regression. Tile 474 is the exact controlled-distortion and warp regression. Preserve their hashes and band checksums above, retain the Wyman and Rinehardt/Reinhardt rejection reasons, and never describe Boulevard–Tennelle as surviving OSM.
 
-1. The first version is a local comparison window, not a QGIS plugin. It does not upload maps or save the master project.
-2. The left panel is the north-oriented Sanborn source in image-pixel coordinates.
-3. The center panel is Kauffman, used to locate the historic network and vanished streets.
-4. The right panel is OSM, used for current ground truth where the intersection genuinely survives.
-5. Kauffman and OSM stay synchronized to the same EPSG:3857 extent; the unreferenced source remains an independent pixel view until controls link it geographically.
-6. Every candidate records street names, source and target coordinates, evidence type, confidence, acceptance state, and rejection reason.
-7. Clicking a target in Kauffman automatically marks the candidate Kauffman-assisted. It can never silently become an OSM control.
-8. Rejected candidates remain in the session record so false friends are not rediscovered.
-9. Exactly three wide, non-collinear controls remain the default.
-10. A low-resolution OSM and Kauffman preview must pass before the full helper runs.
-11. The tool warns about small or collinear triangles, evidence confusion, severe scale mismatch, cardinal-grid failure, output collisions, and protected-project timestamp changes.
-12. After approval, the existing helper performs the final affine warp, alpha, compression, checksums, and ledger.
-13. QGIS remains the final visual QA and layer-organization environment. Add exactly one root-level 1911 layer and leave the protected project unsaved.
-
-The first regression target is Tile 474. The workspace must reproduce its three accepted controls, retain the Wyman and Rinehardt/Reinhardt rejection reasons, reproduce the accepted four pixel checksums, and never describe Boulevard–Tennelle as surviving OSM.
-
-Live QGIS MCP verification completed on 2026-07-14 established:
+Live QGIS verification completed on 2026-07-15 established:
 
 - QGIS version `3.42.1-Münster`;
 - protected project path `/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/JLS Master Map File.qgz`;
-- project CRS `EPSG:3857` with 42 loaded map layers;
+- project CRS `EPSG:3857` with 45 loaded map layers and an already-dirty in-memory project at verification time;
 - exact basemap name `Open Street Map`, provided as an XYZ tile source through QGIS's `wms` provider in EPSG:3857;
-- exact historical reference name `1921 Atlanta Kauffman Map_modified`, a 19035 × 17464 three-band GDAL raster natively in EPSG:4326;
-- exact index name `1911 Sanborn Index Orthorectified`, a 7251 × 6957 three-band GDAL raster natively in EPSG:4326;
-- the index is a raster and therefore has no searchable tile-number attribute field;
-- Tile 474 is a root-level 7735 × 9239 four-band GDAL raster in EPSG:3857 with renderer opacity `1.0` and alpha band `4`.
+- exact historical reference name `1921 Atlanta Kauffman Map_modified`, sourced from `/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/Stage 1 -Orthorectified Atlanta Maps to print/1921 Atlanta Kauffman Map_modified.tif`, a GDAL raster natively in EPSG:4326;
+- exact root-level index name `1911 Sanborn Index Orthorectified — OSM 9-point fine-tuned (2026-07-14)`;
+- exact index source `/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/Stage 1 -Orthorectified Atlanta Maps to print/1911 Sanborn Index Orthorectified_OSM_9point_finetuned_2026-07-14.tif`, in EPSG:3857 with alpha band 4;
+- root-level group `1911 ATLANTA SANBORNS` immediately below that index, with the index outside the group;
+- completed Sanborn renderers use opacity `1.0`, Brightness `+50`, Gamma `1.2`, Contrast `+20`, and alpha band `4`.
 
-The three-panel workspace must reproject Kauffman and the index into the synchronized EPSG:3857 comparison view. It must use visual index reading, a recorded coordinate, or a separately built lookup table rather than inventing index fields. Verify any future QGIS Processing algorithm identifier live before using it.
+The QGIS helper must verify these live names and properties rather than infer them. It must keep the group expanded, sort its raster children by printed tile number, collapse every raster row, verify one registry entry and one tree node per incoming canonical path, and prove the protected project file was not written.
+
+The generated v1.12 QGIS code was then exercised twice against this open protected project using its existing Tile 236. Both runs succeeded, reused the same raster and group without duplication, and produced numeric order `154 / 196 / 236 / 474 / 485 / 486 / 493 / 494`. The group remained immediately below the exact index and expanded; every raster child remained collapsed. Tile 236 retained Brightness `+50`, Gamma `1.2`, Contrast `+20`, opacity `1.0`, and alpha band `4`. The project remained dirty and unsaved, the result reported `save_project=false`, and the protected `.qgz` modification time remained `1784010514439060200`.
+
+That live exercise used an equivalent in-memory hash-bound plan because the older Tile 236 raster predates creation of an adjacent schema-3 ledger. Schema-3 offline manifest validation is covered by the automated tests. Record the live result precisely; do not describe it as a live schema-3 manifest run.
+
+The present schema-3 revision was separately exercised inside the installed QGIS 3.42.1 runtime using the real fine-tuned index and synthetic tile rasters. It passed duplicate prevention, numeric sorting, style, collapsed-row, rollback, provenance, and no-save probes. The QGIS MCP connection was unavailable for that pass, so it did not inspect or mutate Joel's open protected project. Keep this isolated current-revision evidence distinct from the earlier live Tile 236 evidence.

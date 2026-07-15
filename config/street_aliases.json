@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "aliases": [
+    {
+      "historic": "Houston Street",
+      "modern": "John Wesley Dobbs Avenue",
+      "evidence": "Verified against OSM and the 1921 Kauffman map for Tile 154",
+      "status": "approved"
+    },
+    {
+      "historic": "North Butler Street",
+      "modern": "Jesse Hill Junior Drive",
+      "evidence": "Verified against OSM and the 1921 Kauffman map for Tile 154",
+      "status": "approved"
+    },
+    {
+      "historic": "Butler Street",
+      "modern": "Jesse Hill Junior Drive",
+      "evidence": "Verified against OSM and the 1921 Kauffman map for Tile 154",
+      "status": "approved"
+    }
+  ]
+}
