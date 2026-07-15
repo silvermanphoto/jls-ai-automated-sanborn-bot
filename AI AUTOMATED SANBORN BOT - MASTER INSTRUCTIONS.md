@@ -2,7 +2,7 @@
 
 ## Master operating instructions for georeferencing historic Sanborn sheets in QGIS
 
-**Version:** 1.7
+**Version:** 1.9
 **Created:** 2026-07-13  
 **Primary environment:** QGIS on macOS, controlled by Sol/Codex through Computer Use  
 **Default effort target:** Normal effort  
@@ -22,11 +22,11 @@ If the requested 1911 sheet is not already local, complete the LOC discovery and
 4. If the sheet is one of the four completed 1911 sheets listed in Section 18, load its final `_cardinal_v2.points` file and skip control-point reconstruction.
 5. Otherwise locate the sheet citywide against **1921 Atlanta Kauffman Map_modified**; never assume the next sheet is in Summerhill or any other previously visited neighborhood.
 6. Identify exactly three distant, non-collinear, surviving street-centerline intersections against OSM and record them in one table.
-7. Capture modern coordinates from the QGIS canvas in the project CRS; manually enter them into the Georeferencer coordinate dialogs.
-8. Use Helmert only as a rigid-scale diagnostic. If three verified points show a global X/Y scale mismatch, use `Polynomial 1` with exactly those three points.
+7. Capture modern coordinates in the project CRS, then annotate the three proposed source pixels as labeled crosshairs on the complete source sheet. Every crosshair must visibly sit at the center of its named intersection before any transformation is run.
+8. Use Helmert only as a rigid-scale diagnostic. Before accepting `Polynomial 1`, calculate the affine scale ratio and transformed-axis angle. Stop and recheck the source pixels if the scale ratio exceeds `1.15` or the axes differ from 90 degrees by more than 5 degrees without strong historical justification.
 9. Explicitly save `<source stem>_3points.points` by clicking **Save**.
 10. Prefer `tools/sanborn_georeference.py` for the deterministic warp and file audit. Otherwise set cubic resampling, lossless DEFLATE compression, a new `_georeferenced.tif` output, **Save GCP points**, and **Load in project when done**.
-11. Add the completed raster exactly once at the root level beside the other 1911 sheets; never leave it inside the currently selected group.
+11. Add the completed raster exactly once inside the root-level `1911 ATLANTA SANBORNS` folder directly beneath the 1911 index layer. Keep the index outside the folder and sort the individual sheets by printed tile number.
 12. Visually check the three anchors and at least one surviving non-control street against OSM.
 13. Blink the complete sheet against Kauffman to verify historical placement, orientation, and vanished streets.
 14. Verify the output and GCP files exist and the protected `.qgz` modification time is unchanged.
@@ -167,6 +167,7 @@ This is a permanent output and display rule.
 - Valid map pixels must remain fully opaque (normally alpha value `255`).
 - In QGIS, **Layer Properties > Transparency > Global Opacity** must always be set to **100%**.
 - In QGIS, **Layer Properties > Symbology > Layer Rendering > Color rendering**, apply these defaults to every completed Sanborn raster: **Brightness +50**, **Gamma 1.2**, and **Contrast +20**.
+- Immediately collapse the completed raster's entry in the QGIS Layers panel so **Band 1 (Red)**, **Band 2 (Green)**, and **Band 3 (Blue)** are hidden by default. Apply this after every load or reload; Joel should never have to close the RGB band list manually.
 - Never lower Global Opacity to reveal the basemap. For comparison, blink the historic layer off and on instead.
 - Never make RGB value `0,0,0` globally transparent. Sanborn linework and text contain genuine black ink that must remain visible.
 - When using GDAL directly, include `-dstalpha` in `gdalwarp`. This creates the destination alpha band and masks the otherwise black triangular or irregular areas outside the warped source footprint.
@@ -206,25 +207,29 @@ Kauffman is always part of the workflow, including neighborhoods where modern re
 
 Do not promote Kauffman to modern survey accuracy. If fewer than three trustworthy surviving OSM intersections can be found, do not invent modern control points or silently treat Kauffman as equal to OSM. Record the shortage, identify any overlapping already-georeferenced historic sheets, and ask Joel whether to proceed with a clearly labeled lower-confidence Kauffman-assisted fit.
 
-### 2.10 New raster layers belong at the root level in the chronological 1911 cluster
+### 2.10 Individual sheets belong in the `1911 ATLANTA SANBORNS` folder
 
-QGIS often inserts a new layer relative to the currently selected layer-tree item. If a folder is selected, the new raster can silently land inside that folder even when the folder is hidden or disabled.
+The root-level layer **1911 Sanborn Index Orthorectified — OSM 9-point fine-tuned (2026-07-14)** must be followed immediately by a root-level folder named **1911 ATLANTA SANBORNS**. The index remains outside the folder.
 
 Before adding a finished Sanborn raster:
 
-1. In the Layers panel, click a known **root-level 1911 raster**, not a group heading and not a child layer.
+1. Confirm the index is at the root level and the `1911 ATLANTA SANBORNS` folder is immediately beneath it.
 2. In the Data Source Manager, select the one intended GeoTIFF and click **Add exactly once**. The Add button may give no visible acknowledgement and the dialog may remain open; do not click repeatedly.
 3. Close the Data Source Manager and verify that exactly one new layer exists.
-4. Confirm that its indentation matches the other root-level 1911 sheets and that it sits in the chronological 1911 cluster.
-5. If it landed inside a group, move one copy to the root-level 1911 cluster and remove only the accidental duplicate layer entries. Do not delete the GeoTIFF from disk.
+4. Move that layer into `1911 ATLANTA SANBORNS` and place it in ascending printed tile-number order.
+5. Collapse the new raster's layer-tree entry so its RGB band legend rows are closed. Keep the `1911 ATLANTA SANBORNS` folder itself expanded unless Joel requests otherwise.
+6. If duplicate layer entries appeared, keep one correctly placed entry and remove only the duplicates. Do not delete the GeoTIFF from disk.
 
 The approved ordering pattern is:
 
 ```text
-...1906 map
-Sanborn 1911 -- Tile <number>_georeferenced
-other 1911 Sanborn sheets
-1911 index and related 1911 layers
+1911 Sanborn Index Orthorectified — OSM 9-point fine-tuned (2026-07-14)
+1911 ATLANTA SANBORNS/
+  Tile 196
+  Tile 236
+  Tile 474
+  Tile 485
+  ...additional sheets in ascending numeric order...
 1921 Atlanta Kauffman Map_modified
 ...
 ```
@@ -511,8 +516,9 @@ For each point:
    - uncheck **Automatically hide georeferencer window**;
    - click **OK**.
 4. Confirm a new enabled row appears in the GCP table.
-5. Confirm the displayed source point is near the intended intersection.
+5. Confirm the displayed source point is exactly at the center of the intended intersection.
 6. Copy the source and target values into the session ledger.
+7. After all three points are recorded, render a labeled full-sheet proof image showing all three source crosshairs. Do not proceed if any crosshair is on a curb, block, label, hydrant, or street approach rather than the intersection center.
 
 Narration template:
 
@@ -612,6 +618,13 @@ Use these as practical prompts, not absolute survey standards:
 - `>100 px`: almost certainly a wrong control, wrong target coordinate, wrong CRS, or a transformation model that cannot represent the scan's global distortion.
 
 For exactly three points under Polynomial 1, zero residual is mathematically guaranteed; rely on the visual QA checklist instead.
+
+Before any three-point affine preview, also calculate:
+
+- the ratio between the two singular scale values of the affine matrix;
+- the angle between the transformed source axes.
+
+Normal scanned-map rotation does not require strong shear. A scale ratio greater than `1.15` or an axis angle outside `85–95°` is a hard stop unless the source sheet and historical evidence clearly justify it. Tile 196's rejected first attempt measured a `1.53` scale ratio and `104.8°`; successful Tile 236 measured `1.022` and `90.6°`.
 
 ---
 
@@ -736,8 +749,9 @@ If it is missing:
 Then verify the layer-tree structure, not only visibility:
 
 - exactly one copy of the new raster is present;
-- it is at the root level, not nested inside a folder such as `River REM`;
-- it is beside the other 1911 sheets in chronological order;
+- it is inside `1911 ATLANTA SANBORNS`, not at the root or inside any unrelated folder;
+- the folder is immediately beneath the root-level 1911 index, and the index is not inside it;
+- individual sheets are in ascending printed tile-number order;
 - its Global Opacity is 100%.
 
 ### 10.2 Inspect all three anchors
@@ -1047,6 +1061,7 @@ The job is complete only when every item below is true.
 - [ ] Genuine black ink within the sheet remains opaque and visible.
 - [ ] QGIS Global Opacity is exactly 100% (`renderer().opacity() == 1.0`).
 - [ ] QGIS Layer Rendering uses Brightness `+50`, Gamma `1.2`, and Contrast `+20`.
+- [ ] The finished raster's QGIS layer-tree entry is collapsed, with its Red, Green, and Blue band rows hidden.
 
 ### GCP integrity
 
@@ -1058,6 +1073,8 @@ The job is complete only when every item below is true.
 ### Alignment quality
 
 - [ ] All three control intersections align visually.
+- [ ] A labeled full-sheet source proof shows every GCP crosshair exactly centered on its named intersection.
+- [ ] The affine scale ratio is no greater than `1.15`, and the transformed axes fall within `85–95°`, unless documented historical evidence justifies the exception.
 - [ ] Surviving non-control street segments are plausible.
 - [ ] The complete street grid was blink-checked against **1921 Atlanta Kauffman Map_modified**.
 - [ ] Historically east–west streets remain east–west and historically north–south streets remain north–south.
@@ -1071,7 +1088,9 @@ The job is complete only when every item below is true.
 - [ ] Protected `.qgz` modification time is unchanged.
 - [ ] QGIS project Save was not used.
 - [ ] QGIS remains open if the in-memory project is dirty.
-- [ ] Exactly one new raster layer is present at the root level in the chronological 1911 cluster.
+- [ ] Exactly one new raster layer is inside `1911 ATLANTA SANBORNS` in ascending tile-number order.
+- [ ] Every raster entry inside `1911 ATLANTA SANBORNS` is collapsed so no RGB band lists are left open.
+- [ ] `1911 ATLANTA SANBORNS` is immediately beneath the root-level 1911 index, and the index remains outside the folder.
 
 ---
 
@@ -1086,13 +1105,13 @@ The final report should be concise and include:
 5. visual verification result;
 6. explicit statement that the source was not overwritten;
 7. explicit statement that the protected `.qgz` was not saved or modified on disk;
-8. confirmation that exactly one new layer is at the root level beside the other 1911 sheets;
+8. confirmation that exactly one new layer is inside `1911 ATLANTA SANBORNS` in ascending numeric order;
 9. note that the new layer is loaded only in the current QGIS session unless project saving is later authorized.
 
 Suggested handoff:
 
 ```text
-Completed. I created <output>, saved the three controls in <points>, and loaded exactly one new raster over OSM at the root level beside the other 1911 sheets. The controls were <A>, <B>, and <C>, using Polynomial 1 in <CRS>. The anchor intersections and surviving street grid align visually. The original TIFF was not overwritten, and the protected master .qgz was not saved or modified on disk. The layer is present in the current QGIS session only.
+Completed. I created <output>, saved the three controls in <points>, and loaded exactly one new raster over OSM inside `1911 ATLANTA SANBORNS` in ascending tile order. The controls were <A>, <B>, and <C>, using Polynomial 1 in <CRS>. The labeled source crosshairs, affine diagnostics, anchor intersections, and surviving non-control street grid all passed. The original TIFF was not overwritten, and the protected master .qgz was not saved or modified on disk. The layer is present in the current QGIS session only.
 ```
 
 ---

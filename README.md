@@ -13,11 +13,16 @@ The goal is speed without sacrificing geographic judgment. Each sheet is positio
 
 ## Current rendering formula
 
-Completed Sanborn layers use 100% global opacity, Brightness +50, Gamma 1.2, and Contrast +20. Empty warped areas use a real alpha band; black map ink is never treated as transparency.
+Completed Sanborn layers use 100% global opacity, Brightness +50, Gamma 1.2, and Contrast +20. Empty warped areas use a real alpha band; black map ink is never treated as transparency. Each raster entry is collapsed after loading so the Red, Green, and Blue band rows remain hidden by default.
+
+## QGIS organization and accuracy gates
+
+The root-level 1911 index is followed immediately by the `1911 ATLANTA SANBORNS` folder. Individual sheets live inside that folder in ascending printed tile-number order; the index itself remains outside it.
+
+Before any full-resolution warp, a labeled full-sheet proof must show all three source crosshairs exactly centered on their named intersections. A three-point affine fit is rejected if its scale ratio exceeds 1.15 or its transformed axes fall outside 85–95 degrees without documented historical justification. At least one independent non-control street must also align against OpenStreetMap, and the complete grid must agree with the Kauffman map.
 
 ## Important safety rules
 
 The original Sanborn image is read-only. Every georeferenced result receives a new filename. The protected `JLS Master Map File.qgz` project may be opened and used, but it must never be saved or closed by automation unless Joel explicitly authorizes that action.
 
 This repository is private. Large JP2 and GeoTIFF images are not stored here because they would exceed practical GitHub limits and can be recovered from the Library of Congress or regenerated from the saved control points.
-
