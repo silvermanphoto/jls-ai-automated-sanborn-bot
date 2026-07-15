@@ -1,0 +1,36 @@
+# Large source and generated map imagery stays local.
+*.jp2
+*.tif
+*.tiff
+*.tif.aux.xml
+*.tiff.aux.xml
+
+# Build outputs
+dist/
+build/
+out/
+release/
+dist-electron/
+.vite/
+coverage/
+
+# Dependencies and Python environments
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Secrets
+.env
+.env.*
+*.key
+*.pem
+
+# Local system, logs, and tool state
+.DS_Store
+*.log
+.wrangler/
+.claude/
+.Codex/
+
