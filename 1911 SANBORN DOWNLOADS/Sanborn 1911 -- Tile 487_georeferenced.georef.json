@@ -1,0 +1,184 @@
+{
+  "schema_version": 1,
+  "created_utc": "2026-07-26T08:44:18.860896+00:00",
+  "source": {
+    "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/1911 SANBORN DOWNLOADS/Sanborn 1911 -- Tile 487.jp2",
+    "width": 6640,
+    "height": 7795,
+    "bytes": 9826195,
+    "sha256": "4f1f72a3e0aa45c963a70c3e21ddb9f7b982432533d9d3738545e6b56c710209"
+  },
+  "points": {
+    "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/batch/reviews/tile-0487/packet-20260726T084247754555Z/approved-controls.points",
+    "sha256": "6c3fba5ef6402406e265f7036f4a9045c88658385a2244121eb845aa7aa6af28",
+    "controls": [
+      {
+        "map_x": -9394759.333602883,
+        "map_y": 3993877.8509368543,
+        "source_x": 6132.6625,
+        "source_y_qgis": -7277.338967,
+        "source_line_gdal": 7277.338967,
+        "label": "PRYOR x CRUMLEY"
+      },
+      {
+        "map_x": -9394754.368753595,
+        "map_y": 3994203.8337258114,
+        "source_x": 670.225,
+        "source_y_qgis": -7277.338967,
+        "source_line_gdal": 7277.338967,
+        "label": "PRYOR x FULTON"
+      },
+      {
+        "map_x": -9394517.402953543,
+        "map_y": 3994042.69525121,
+        "source_x": 3397.8125,
+        "source_y_qgis": -3141.23769,
+        "source_line_gdal": 3141.23769,
+        "label": "PULLIAM x RICHARDSON"
+      }
+    ],
+    "confidence": "three-osm"
+  },
+  "transformation": {
+    "type": "Polynomial 1 / global affine",
+    "target_crs": "EPSG:3857",
+    "resampling": "cubic",
+    "diagnostics": {
+      "matrix": [
+        [
+          -0.0009089072941605991,
+          -0.057891455791832414
+        ],
+        [
+          -0.059677165909306495,
+          -0.00039559407730394014
+        ]
+      ],
+      "offset": [
+        -9394332.463834114,
+        3994246.709726527
+      ],
+      "determinant": -0.003454438453678077,
+      "unexpected_mirroring": false,
+      "singular_scales": [
+        0.05989059312586618,
+        0.057679149151490666
+      ],
+      "scale_ratio": 1.038340440296151,
+      "axis_angle_degrees": 88.73591214162909,
+      "source_triangle_area_pixels2": 11296597.359641345,
+      "target_triangle_area_crs2": 39023.40031456947,
+      "source_triangle_coverage": 0.2182546225886486,
+      "source_x_span_fraction": 0.82265625,
+      "source_y_span_fraction": 0.5306095288005132,
+      "target_location_check": {
+        "enabled": true,
+        "passed": true,
+        "target_control_bbox": [
+          -9394759.333602883,
+          3993877.8509368543,
+          -9394517.402953543,
+          3994203.8337258114
+        ],
+        "target_control_centroid": [
+          -9394677.035103342,
+          3994041.459971292
+        ],
+        "transformed_source_footprint": [
+          [
+            -9394332.463834114,
+            3994246.709726527
+          ],
+          [
+            -9394338.498978548,
+            3993850.453344889
+          ],
+          [
+            -9394789.762876445,
+            3993847.3696890566
+          ],
+          [
+            -9394783.727732012,
+            3994243.626070694
+          ]
+        ],
+        "transformed_source_footprint_bbox": [
+          -9394789.762876445,
+          3993847.3696890566,
+          -9394332.463834114,
+          3994246.709726527
+        ],
+        "expected_target_bbox": [
+          -9394809.622499015,
+          3993847.220151116,
+          -9394309.622499015,
+          3994347.220151116
+        ],
+        "all_target_controls_inside_expected_bbox": true,
+        "expected_target_seed": [
+          -9394559.622499015,
+          3994097.220151116
+        ],
+        "target_seed_distance_to_footprint": 0.0,
+        "max_target_seed_distance": 250.0,
+        "target_seed_within_tolerance": true
+      }
+    },
+    "warnings": [],
+    "distortion_override": false,
+    "safety_limits": {
+      "max_scale_ratio": 1.15,
+      "axis_angle_degrees": [
+        85.0,
+        95.0
+      ],
+      "min_triangle_coverage": 0.02,
+      "min_x_span_fraction": 0.2,
+      "min_y_span_fraction": 0.2,
+      "expected_crs": "EPSG:3857",
+      "expected_target_bbox": [
+        -9394809.622499015,
+        3993847.220151116,
+        -9394309.622499015,
+        3994347.220151116
+      ],
+      "expected_target_seed": [
+        -9394559.622499015,
+        3994097.220151116
+      ],
+      "max_target_seed_distance": 250.0
+    },
+    "affine_provenance_signature": "f1c8f5cb5f2d24d5aab880597b9c61323b66cba4e423fe2237c569a6a8480034"
+  },
+  "output": {
+    "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/1911 SANBORN DOWNLOADS/Sanborn 1911 -- Tile 487_georeferenced.tif",
+    "width": 7713,
+    "height": 6735,
+    "bytes": 62295497,
+    "sha256": "537a7de47b63f98868c821b6bf868aa7c97246c99fdd0efc06d451dd009981e1",
+    "bands": [
+      "Red",
+      "Green",
+      "Blue",
+      "Alpha"
+    ],
+    "band_checksums": [
+      18658,
+      3888,
+      19345,
+      42076
+    ],
+    "alpha_min": 0.0,
+    "alpha_max": 255.0,
+    "transparent_edge_pixels_present": true,
+    "compression": "DEFLATE",
+    "predictor": 2
+  },
+  "protected_project": {
+    "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/JLS Master Map File.qgz",
+    "mtime_ns_before": 1785051085182943090,
+    "mtime_ns_after": 1785051085182943090,
+    "unchanged_during_run": true
+  },
+  "quality_note": "First sheet finished after the review-packet repair."
+}
