@@ -22,6 +22,16 @@ Use the master instruction manual in this folder as the operating source of trut
 
 ## Lessons learned
 
+### 2026-07-26 — Version 1.14, the packet repair
+
+- The packet step failed on every run from the day the batch engine shipped. `cmd_packet` created the packet folder, copied `approved-controls.points` into it, then called `sanborn_review.py create --review-dir` against that same folder — and that generator refuses a folder holding anything unless `--replace` is passed. Nothing was ever drawn, so no sheet reached approval or a final map. When one step both prepares a folder and hands it to another tool, check that tool's expectations about the folder being empty.
+- A tool that exits non-zero inside `subprocess.run(check=True)` leaves whatever the caller already created. Every failed packet left an orphan folder holding only the control copy, invisible to the queue and to the app, accumulating on every retry. Remove what a failed step created.
+- `finish` resumes from an existing raster and ledger, which is correct for crash recovery but wrong when the sheet was re-approved with different controls: verification compared the old map against the new approval and stopped with a mismatched-ledger complaint and no way forward. `_ledger_predates_approval` now sets the superseded pair aside and warps again from what was approved, keeping the safety intent without the dead end.
+- Reproduce an app-reported failure by replaying the exact command with the app's sanitized environment (`env -i` with its fixed PATH) against a **copy** of `batch/sanborn_batch.sqlite3` via `--database`. Note that packet and review folders still land under the real `BATCH_DIR`, so clean up afterward.
+- The warp is deterministic: two independent runs of sheet 487 from the same controls produced byte-identical rasters (`537a7de4…`). A differing fingerprint from unchanged inputs means something is genuinely wrong, not merely re-rendered.
+- Downloads carry no macOS warning marking of their own, but one can attach after a scan is first opened, and Preview handles JPEG 2000 poorly regardless. `clear_macos_download_warning` strips the flag after the length check; it is best-effort and must never interrupt a download.
+- A completed proposal with zero ranked triplets is a real outcome needing human street review, not a transient state. Two of the three queued sheets sit there now (four candidates on 486, one on 488). Anything reading the queue must present it as a dead end.
+
 ### 2026-07-15 — Local-first version 1.13 completion
 
 - An OSM intersection is an exact node shared by two named road ways. Never average nearby candidates or infer a connection where bridge, tunnel, or divided-road geometry merely crosses. Preserve multiple exact nodes as an ambiguity for review.

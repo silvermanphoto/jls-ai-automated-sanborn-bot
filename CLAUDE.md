@@ -31,6 +31,9 @@ Reviewer and note are mandatory. `--replace-existing` deliberately supersedes an
 - A distortion exception during `sanborn_controls.py export` can waive only scale-ratio or axis-angle warnings. It cannot waive mirroring, inadequate geometry, wrong CRS, wrong neighborhood, seed-envelope failure, or an out-of-bounds control. The flag requires a nonblank note and an actual eligible warning.
 - Export approval does not carry automatically into packet creation. Repeat `--allow-distortion` and the evidence note on `sanborn_batch.py packet`.
 - Every review attempt gets a new `batch/reviews/tile-NNNN/packet-TIMESTAMP/` folder with an `approved-controls.points` copy. Never edit or reuse an older packet.
+- 2026-07-26: `cmd_packet` seeds that folder with the control copy and then calls `sanborn_review.py create` against it, so it must pass `--replace` — the generator refuses a folder that already holds anything. Without it the packet step failed on every run since the batch engine shipped, and no sheet could reach approval or a final map. A packet whose generator fails is now removed rather than left to accumulate.
+- 2026-07-26: `finish` resumes from an existing raster and ledger. When that pair came from controls a later approval replaced, resuming used to stop with a mismatched-ledger complaint and no way forward; `_ledger_predates_approval` now sets the superseded pair aside and warps again from what was approved. An unreadable ledger counts as superseded.
+- 2026-07-26: A completed proposal with zero ranked triplets is a real outcome, not a transient state — two of the three currently queued sheets are in it. Anything reading the queue must present that as a dead end needing human street review, never as work still in progress.
 
 ## Final raster, resume, and QGIS
 
