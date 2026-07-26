@@ -1,0 +1,360 @@
+{
+  "schema_version": 1,
+  "created_utc": "2026-07-26T07:57:00.641322+00:00",
+  "tile": 487,
+  "proposal_path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/batch/proposals/tile-0487.json",
+  "selected_triplet": 0,
+  "controls": [
+    {
+      "candidate_id": 1,
+      "historic_street_a": "PRYOR",
+      "historic_street_b": "CRUMLEY",
+      "modern_street_a": "Pryor Street",
+      "modern_street_b": "Crumley Street Southeast",
+      "label": "PRYOR x CRUMLEY",
+      "source_x": 6132.6625,
+      "source_y": 7277.338967261112,
+      "target_x": -9394759.333602883,
+      "target_y": 3993877.8509368543,
+      "lon": -84.394559,
+      "lat": 33.739509,
+      "osm_node_id": 69326337,
+      "osm_matches": [
+        {
+          "way_a": 630778918,
+          "way_b": 9270921,
+          "street_a": {
+            "raw_name": "Pryor Street Southwest",
+            "source_tag": "name:without-quadrant"
+          },
+          "street_b": {
+            "raw_name": "Crumley Street Southwest",
+            "source_tag": "name:without-quadrant"
+          }
+        }
+      ],
+      "source_evidence": {
+        "horizontal": {
+          "historic_core": "pryor",
+          "historic_text": "PRYOR",
+          "modern_normalized": "pryor street",
+          "modern_raw": "Pryor Street",
+          "orientation": "horizontal",
+          "axis_coordinate": 7277.338967261112,
+          "ocr_confidence": 96.688,
+          "match_method": "exact-name",
+          "match_score": 1.0,
+          "labels": [
+            {
+              "historic_text": "PRYOR",
+              "source_x": 3113.5375000000004,
+              "source_y": 7277.338967261112,
+              "orientation": "horizontal",
+              "ocr_confidence": 96.688,
+              "ocr_strength": "weak-token"
+            }
+          ],
+          "axis_model": {
+            "a": 0.0,
+            "b": 1.0,
+            "c": -7277.338967261112,
+            "angle_degrees": 0.0,
+            "method": "ocr-label-constant",
+            "support": 1
+          }
+        },
+        "vertical": {
+          "historic_core": "crumley",
+          "historic_text": "CRUMLEY",
+          "modern_normalized": "crumley street",
+          "modern_raw": "Crumley Street Southeast",
+          "orientation": "vertical",
+          "axis_coordinate": 6114.50625,
+          "ocr_confidence": 96.544,
+          "match_method": "exact-name",
+          "match_score": 1.0,
+          "labels": [
+            {
+              "historic_text": "CRUMLEY",
+              "source_x": 6132.6625,
+              "source_y": 3872.6024753792917,
+              "orientation": "vertical",
+              "ocr_confidence": 96.544,
+              "ocr_strength": "weak-token"
+            },
+            {
+              "historic_text": "Crumley",
+              "source_x": 6096.35,
+              "source_y": 3872.6024753792917,
+              "orientation": "vertical",
+              "ocr_confidence": 96.531,
+              "ocr_strength": "word"
+            }
+          ],
+          "axis_model": {
+            "a": 1.0,
+            "b": 0.0,
+            "c": -6132.6625,
+            "angle_degrees": 90.0,
+            "method": "ocr-label-constant",
+            "support": 1
+          }
+        }
+      },
+      "match_methods": [
+        "exact-name",
+        "exact-name"
+      ],
+      "pair_ambiguity_count": 1
+    },
+    {
+      "candidate_id": 2,
+      "historic_street_a": "PRYOR",
+      "historic_street_b": "FULTON",
+      "modern_street_a": "Pryor Street",
+      "modern_street_b": "Fulton Street",
+      "label": "PRYOR x FULTON",
+      "source_x": 670.2250000000001,
+      "source_y": 7277.338967261112,
+      "target_x": -9394754.368753595,
+      "target_y": 3994203.8337258114,
+      "lon": -84.3945144,
+      "lat": 33.7419441,
+      "osm_node_id": 69326333,
+      "osm_matches": [
+        {
+          "way_a": 630778918,
+          "way_b": 561774333,
+          "street_a": {
+            "raw_name": "Pryor Street Southwest",
+            "source_tag": "name:without-quadrant"
+          },
+          "street_b": {
+            "raw_name": "Fulton Street Southwest",
+            "source_tag": "name:without-quadrant"
+          }
+        },
+        {
+          "way_a": 630778918,
+          "way_b": 604430152,
+          "street_a": {
+            "raw_name": "Pryor Street Southwest",
+            "source_tag": "name:without-quadrant"
+          },
+          "street_b": {
+            "raw_name": "Fulton Street Southwest",
+            "source_tag": "name:without-quadrant"
+          }
+        }
+      ],
+      "source_evidence": {
+        "horizontal": {
+          "historic_core": "pryor",
+          "historic_text": "PRYOR",
+          "modern_normalized": "pryor street",
+          "modern_raw": "Pryor Street",
+          "orientation": "horizontal",
+          "axis_coordinate": 7277.338967261112,
+          "ocr_confidence": 96.688,
+          "match_method": "exact-name",
+          "match_score": 1.0,
+          "labels": [
+            {
+              "historic_text": "PRYOR",
+              "source_x": 3113.5375000000004,
+              "source_y": 7277.338967261112,
+              "orientation": "horizontal",
+              "ocr_confidence": 96.688,
+              "ocr_strength": "weak-token"
+            }
+          ],
+          "axis_model": {
+            "a": 0.0,
+            "b": 1.0,
+            "c": -7277.338967261112,
+            "angle_degrees": 0.0,
+            "method": "ocr-label-constant",
+            "support": 1
+          }
+        },
+        "vertical": {
+          "historic_core": "fulton",
+          "historic_text": "FULTON",
+          "modern_normalized": "fulton street",
+          "modern_raw": "Fulton Street",
+          "orientation": "vertical",
+          "axis_coordinate": 670.2250000000001,
+          "ocr_confidence": 96.397,
+          "match_method": "exact-name",
+          "match_score": 1.0,
+          "labels": [
+            {
+              "historic_text": "FULTON",
+              "source_x": 670.2250000000001,
+              "source_y": 1924.37117380889,
+              "orientation": "vertical",
+              "ocr_confidence": 96.397,
+              "ocr_strength": "weak"
+            }
+          ],
+          "axis_model": {
+            "a": 1.0,
+            "b": 0.0,
+            "c": -670.2250000000001,
+            "angle_degrees": 90.0,
+            "method": "ocr-label-constant",
+            "support": 1
+          }
+        }
+      },
+      "match_methods": [
+        "exact-name",
+        "exact-name"
+      ],
+      "pair_ambiguity_count": 1
+    },
+    {
+      "candidate_id": 4,
+      "historic_street_a": "PULLIAM",
+      "historic_street_b": "RICHARDSON",
+      "modern_street_a": "Pulliam Street Southwest",
+      "modern_street_b": "Richardson Street Southeast",
+      "label": "PULLIAM x RICHARDSON",
+      "source_x": 3397.8125,
+      "source_y": 3141.2376896459937,
+      "target_x": -9394517.402953543,
+      "target_y": 3994042.69525121,
+      "lon": -84.3923857,
+      "lat": 33.7407404,
+      "osm_node_id": 69215162,
+      "osm_matches": [
+        {
+          "way_a": 436836583,
+          "way_b": 9251361,
+          "street_a": {
+            "raw_name": "Pulliam Street Southwest",
+            "source_tag": "name:without-quadrant"
+          },
+          "street_b": {
+            "raw_name": "Richardson Street Southwest",
+            "source_tag": "name:without-quadrant"
+          }
+        },
+        {
+          "way_a": 1110217733,
+          "way_b": 9251361,
+          "street_a": {
+            "raw_name": "Pulliam Street Southwest",
+            "source_tag": "name:without-quadrant"
+          },
+          "street_b": {
+            "raw_name": "Richardson Street Southwest",
+            "source_tag": "name:without-quadrant"
+          }
+        }
+      ],
+      "source_evidence": {
+        "horizontal": {
+          "historic_core": "pulliam",
+          "historic_text": "PULLIAM",
+          "modern_normalized": "pulliam street",
+          "modern_raw": "Pulliam Street Southwest",
+          "orientation": "horizontal",
+          "axis_coordinate": 3141.2376896459937,
+          "ocr_confidence": 96.176,
+          "match_method": "exact-name",
+          "match_score": 1.0,
+          "labels": [
+            {
+              "historic_text": "PULLIAM",
+              "source_x": 3000.4500000000003,
+              "source_y": 3141.2376896459937,
+              "orientation": "horizontal",
+              "ocr_confidence": 96.176,
+              "ocr_strength": "weak-token"
+            }
+          ],
+          "axis_model": {
+            "a": 0.0,
+            "b": 1.0,
+            "c": -3141.2376896459937,
+            "angle_degrees": 0.0,
+            "method": "ocr-label-constant",
+            "support": 1
+          }
+        },
+        "vertical": {
+          "historic_core": "richardson",
+          "historic_text": "RICHARDSON",
+          "modern_normalized": "richardson street",
+          "modern_raw": "Richardson Street Southeast",
+          "orientation": "vertical",
+          "axis_coordinate": 3397.8125,
+          "ocr_confidence": 96.304,
+          "match_method": "exact-name",
+          "match_score": 1.0,
+          "labels": [
+            {
+              "historic_text": "RICHARDSON",
+              "source_x": 3397.8125,
+              "source_y": 3796.872504657971,
+              "orientation": "vertical",
+              "ocr_confidence": 96.304,
+              "ocr_strength": "weak"
+            }
+          ],
+          "axis_model": {
+            "a": 1.0,
+            "b": 0.0,
+            "c": -3397.8125,
+            "angle_degrees": 90.0,
+            "method": "ocr-label-constant",
+            "support": 1
+          }
+        }
+      },
+      "match_methods": [
+        "exact-name",
+        "exact-name"
+      ],
+      "pair_ambiguity_count": 1
+    }
+  ],
+  "corrections": [],
+  "diagnostics": {
+    "matrix": [
+      [
+        -0.000908907294415233,
+        -0.057891455782737467
+      ],
+      [
+        -0.059677165909311915,
+        -0.00039559407730394014
+      ]
+    ],
+    "offset": [
+      -9394332.463834165,
+      3994246.7097265273
+    ],
+    "determinant": -0.0034544384531355293,
+    "unexpected_mirroring": false,
+    "singular_scales": [
+      0.05989059312507139,
+      0.057679149143197134
+    ],
+    "scale_ratio": 1.0383404404316716,
+    "axis_angle_degrees": 88.73591214132325,
+    "source_triangle_area_pixels2": 11296597.361321367,
+    "target_triangle_area_crs2": 39023.40031456947,
+    "source_triangle_coverage": 0.21825462262110729,
+    "source_x_span_fraction": 0.82265625,
+    "source_y_span_fraction": 0.530609528879425
+  },
+  "safety_warnings": [],
+  "distortion_exception": {
+    "allowed": false,
+    "note": "",
+    "warnings": []
+  },
+  "status": "proposed-points-awaiting-preview-approval"
+}

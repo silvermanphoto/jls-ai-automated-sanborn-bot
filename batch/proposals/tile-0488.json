@@ -1,0 +1,1853 @@
+{
+  "schema_version": 1,
+  "created_utc": "2026-07-26T07:47:45.029931+00:00",
+  "tile": 488,
+  "status": "needs-chatgpt-review",
+  "source": {
+    "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/1911 SANBORN DOWNLOADS/Sanborn 1911 -- Tile 488.jp2",
+    "sha256": "8a5f60297e31dc3b7ff9c1c36234d10b268783ca26e611acdce823c489efb80f",
+    "width": 6633,
+    "height": 7795
+  },
+  "spatial_ocr_path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/batch/ocr/tile-0488.spatial.json",
+  "osm_database": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/batch/osm/atlanta-streets.sqlite3",
+  "aliases_path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/config/street_aliases.json",
+  "resolved_labels": [
+    {
+      "historic_text": "WASHINGTON",
+      "historic_core": "washington",
+      "source_x": 3116.47359375,
+      "source_y": 354.4123903217229,
+      "orientation": "horizontal",
+      "ocr_confidence": 96.725,
+      "ocr_strength": "weak",
+      "modern_matches": [
+        {
+          "normalized": "washington avenue",
+          "raw_name": "Washington Avenue",
+          "source_tags": [
+            "name"
+          ],
+          "way_count": 16,
+          "core": "washington",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "washington circle",
+          "raw_name": "Washington Circle",
+          "source_tags": [
+            "name"
+          ],
+          "way_count": 2,
+          "core": "washington",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "washington place",
+          "raw_name": "Washington Place Southwest",
+          "source_tags": [
+            "name:without-quadrant"
+          ],
+          "way_count": 1,
+          "core": "washington",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "washington place southwest",
+          "raw_name": "Washington Place Southwest",
+          "source_tags": [
+            "name"
+          ],
+          "way_count": 1,
+          "core": "washington",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "washington road",
+          "raw_name": "Washington Road",
+          "source_tags": [
+            "name"
+          ],
+          "way_count": 42,
+          "core": "washington",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "washington street",
+          "raw_name": "Washington Street",
+          "source_tags": [
+            "name",
+            "name:without-quadrant"
+          ],
+          "way_count": 14,
+          "core": "washington",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "washington street northwest",
+          "raw_name": "Washington Street Northwest",
+          "source_tags": [
+            "name"
+          ],
+          "way_count": 1,
+          "core": "washington",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "washington street southwest",
+          "raw_name": "Washington Street Southwest",
+          "source_tags": [
+            "name"
+          ],
+          "way_count": 11,
+          "core": "washington",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        }
+      ]
+    },
+    {
+      "historic_text": "PULLIAM",
+      "historic_core": "pulliam",
+      "source_x": 3089.5270312499997,
+      "source_y": 3047.7392980590266,
+      "orientation": "horizontal",
+      "ocr_confidence": 96.641,
+      "ocr_strength": "weak",
+      "modern_matches": [
+        {
+          "normalized": "pulliam street",
+          "raw_name": "Pulliam Street Southwest",
+          "source_tags": [
+            "name:without-quadrant"
+          ],
+          "way_count": 16,
+          "core": "pulliam",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "pulliam street southwest",
+          "raw_name": "Pulliam Street Southwest",
+          "source_tags": [
+            "name"
+          ],
+          "way_count": 16,
+          "core": "pulliam",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        }
+      ]
+    },
+    {
+      "historic_text": "PRYOR",
+      "historic_core": "pryor",
+      "source_x": 3223.2234375,
+      "source_y": 7221.929672959319,
+      "orientation": "horizontal",
+      "ocr_confidence": 96.586,
+      "ocr_strength": "weak-token",
+      "modern_matches": [
+        {
+          "normalized": "pryor circle",
+          "raw_name": "Pryor Circle Southwest",
+          "source_tags": [
+            "name:without-quadrant"
+          ],
+          "way_count": 5,
+          "core": "pryor",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "pryor circle southwest",
+          "raw_name": "Pryor Circle Southwest",
+          "source_tags": [
+            "name"
+          ],
+          "way_count": 5,
+          "core": "pryor",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "pryor road",
+          "raw_name": "Pryor Road",
+          "source_tags": [
+            "name",
+            "name:without-quadrant"
+          ],
+          "way_count": 13,
+          "core": "pryor",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "pryor road southwest",
+          "raw_name": "Pryor Road Southwest",
+          "source_tags": [
+            "name"
+          ],
+          "way_count": 4,
+          "core": "pryor",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "pryor street",
+          "raw_name": "Pryor Street",
+          "source_tags": [
+            "name",
+            "name:without-quadrant"
+          ],
+          "way_count": 29,
+          "core": "pryor",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "pryor street southwest",
+          "raw_name": "Pryor Street Southwest",
+          "source_tags": [
+            "name"
+          ],
+          "way_count": 10,
+          "core": "pryor",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        }
+      ]
+    },
+    {
+      "historic_text": "CRUMLEY",
+      "historic_core": "crumley",
+      "source_x": 288.12093749999997,
+      "source_y": 3790.761765487902,
+      "orientation": "vertical",
+      "ocr_confidence": 96.261,
+      "ocr_strength": "weak-token",
+      "modern_matches": [
+        {
+          "normalized": "crumley street",
+          "raw_name": "Crumley Street Southeast",
+          "source_tags": [
+            "name:without-quadrant"
+          ],
+          "way_count": 6,
+          "core": "crumley",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "crumley street southeast",
+          "raw_name": "Crumley Street Southeast",
+          "source_tags": [
+            "name"
+          ],
+          "way_count": 4,
+          "core": "crumley",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "crumley street southwest",
+          "raw_name": "Crumley Street Southwest",
+          "source_tags": [
+            "name"
+          ],
+          "way_count": 2,
+          "core": "crumley",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        }
+      ]
+    },
+    {
+      "historic_text": "CENTRAL",
+      "historic_core": "central",
+      "source_x": 3168.29390625,
+      "source_y": 5141.052246742887,
+      "orientation": "horizontal",
+      "ocr_confidence": 96.175,
+      "ocr_strength": "weak-token",
+      "modern_matches": [
+        {
+          "normalized": "central avenue",
+          "raw_name": "Central Avenue",
+          "source_tags": [
+            "name"
+          ],
+          "way_count": 22,
+          "core": "central",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        }
+      ]
+    },
+    {
+      "historic_text": "\u2014] CRUMLEY =a",
+      "historic_core": "crumley",
+      "source_x": 233.19140625,
+      "source_y": 3624.9547992555167,
+      "orientation": "vertical",
+      "ocr_confidence": 61.516,
+      "ocr_strength": "weak",
+      "modern_matches": [
+        {
+          "normalized": "crumley street",
+          "raw_name": "Crumley Street Southeast",
+          "source_tags": [
+            "name:without-quadrant"
+          ],
+          "way_count": 6,
+          "core": "crumley",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "crumley street southeast",
+          "raw_name": "Crumley Street Southeast",
+          "source_tags": [
+            "name"
+          ],
+          "way_count": 4,
+          "core": "crumley",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "crumley street southwest",
+          "raw_name": "Crumley Street Southwest",
+          "source_tags": [
+            "name"
+          ],
+          "way_count": 2,
+          "core": "crumley",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        }
+      ]
+    },
+    {
+      "historic_text": "ELLE",
+      "historic_core": "elle",
+      "source_x": 2638.6903125,
+      "source_y": 1968.9577240095718,
+      "orientation": "horizontal",
+      "ocr_confidence": 56.534,
+      "ocr_strength": "weak-token",
+      "modern_matches": [
+        {
+          "normalized": "elle court",
+          "raw_name": "Elle Court",
+          "source_tags": [
+            "name:without-quadrant",
+            "short_name"
+          ],
+          "way_count": 1,
+          "core": "elle",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "elle court southeast",
+          "raw_name": "Elle Court Southeast",
+          "source_tags": [
+            "name"
+          ],
+          "way_count": 1,
+          "core": "elle",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        }
+      ]
+    },
+    {
+      "historic_text": "Wanes",
+      "historic_core": "wanes",
+      "source_x": 262.21078124999997,
+      "source_y": 3088.1547460781703,
+      "orientation": "horizontal",
+      "ocr_confidence": 25.498,
+      "ocr_strength": "word",
+      "modern_matches": [
+        {
+          "normalized": "waynes court",
+          "raw_name": "Waynes Court Southeast",
+          "source_tags": [
+            "name:without-quadrant"
+          ],
+          "way_count": 1,
+          "core": "waynes",
+          "match_method": "fuzzy-name",
+          "match_score": 0.9090909090909091
+        },
+        {
+          "normalized": "waynes court southeast",
+          "raw_name": "Waynes Court Southeast",
+          "source_tags": [
+            "name"
+          ],
+          "way_count": 1,
+          "core": "waynes",
+          "match_method": "fuzzy-name",
+          "match_score": 0.9090909090909091
+        }
+      ]
+    },
+    {
+      "historic_text": "Crumley",
+      "historic_core": "crumley",
+      "source_x": 302.630625,
+      "source_y": 3875.737835681999,
+      "orientation": "vertical",
+      "ocr_confidence": 28.948,
+      "ocr_strength": "word",
+      "modern_matches": [
+        {
+          "normalized": "crumley street",
+          "raw_name": "Crumley Street Southeast",
+          "source_tags": [
+            "name:without-quadrant"
+          ],
+          "way_count": 6,
+          "core": "crumley",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "crumley street southeast",
+          "raw_name": "Crumley Street Southeast",
+          "source_tags": [
+            "name"
+          ],
+          "way_count": 4,
+          "core": "crumley",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "crumley street southwest",
+          "raw_name": "Crumley Street Southwest",
+          "source_tags": [
+            "name"
+          ],
+          "way_count": 2,
+          "core": "crumley",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        }
+      ]
+    },
+    {
+      "historic_text": "Georgia",
+      "historic_core": "georgia",
+      "source_x": 6145.8890625,
+      "source_y": 4062.270672693432,
+      "orientation": "vertical",
+      "ocr_confidence": 95.884,
+      "ocr_strength": "word",
+      "modern_matches": [
+        {
+          "normalized": "georgia avenue",
+          "raw_name": "Georgia Avenue",
+          "source_tags": [
+            "name"
+          ],
+          "way_count": 19,
+          "core": "georgia",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        }
+      ]
+    },
+    {
+      "historic_text": "Pryor",
+      "historic_core": "pryor",
+      "source_x": 3195.24046875,
+      "source_y": 7241.619250199414,
+      "orientation": "horizontal",
+      "ocr_confidence": 95.149,
+      "ocr_strength": "word",
+      "modern_matches": [
+        {
+          "normalized": "pryor circle",
+          "raw_name": "Pryor Circle Southwest",
+          "source_tags": [
+            "name:without-quadrant"
+          ],
+          "way_count": 5,
+          "core": "pryor",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "pryor circle southwest",
+          "raw_name": "Pryor Circle Southwest",
+          "source_tags": [
+            "name"
+          ],
+          "way_count": 5,
+          "core": "pryor",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "pryor road",
+          "raw_name": "Pryor Road",
+          "source_tags": [
+            "name",
+            "name:without-quadrant"
+          ],
+          "way_count": 13,
+          "core": "pryor",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "pryor road southwest",
+          "raw_name": "Pryor Road Southwest",
+          "source_tags": [
+            "name"
+          ],
+          "way_count": 4,
+          "core": "pryor",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "pryor street",
+          "raw_name": "Pryor Street",
+          "source_tags": [
+            "name",
+            "name:without-quadrant"
+          ],
+          "way_count": 29,
+          "core": "pryor",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "pryor street southwest",
+          "raw_name": "Pryor Street Southwest",
+          "source_tags": [
+            "name"
+          ],
+          "way_count": 10,
+          "core": "pryor",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        }
+      ]
+    },
+    {
+      "historic_text": "Revere",
+      "historic_core": "revere",
+      "source_x": 3539.32734375,
+      "source_y": 7210.530444030843,
+      "orientation": "horizontal",
+      "ocr_confidence": 30.828,
+      "ocr_strength": "word",
+      "modern_matches": [
+        {
+          "normalized": "revere court",
+          "raw_name": "Revere Court",
+          "source_tags": [
+            "name"
+          ],
+          "way_count": 1,
+          "core": "revere",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "revere drive",
+          "raw_name": "Revere Drive Northwest",
+          "source_tags": [
+            "name:without-quadrant"
+          ],
+          "way_count": 1,
+          "core": "revere",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "revere drive northwest",
+          "raw_name": "Revere Drive Northwest",
+          "source_tags": [
+            "name"
+          ],
+          "way_count": 1,
+          "core": "revere",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "revere road",
+          "raw_name": "Revere Road Southwest",
+          "source_tags": [
+            "name:without-quadrant"
+          ],
+          "way_count": 1,
+          "core": "revere",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "revere road southwest",
+          "raw_name": "Revere Road Southwest",
+          "source_tags": [
+            "name"
+          ],
+          "way_count": 1,
+          "core": "revere",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        }
+      ]
+    },
+    {
+      "historic_text": "Division",
+      "historic_core": "division",
+      "source_x": 5741.690624999999,
+      "source_y": 7568.051714969422,
+      "orientation": "horizontal",
+      "ocr_confidence": 46.169,
+      "ocr_strength": "word",
+      "modern_matches": [
+        {
+          "normalized": "division place",
+          "raw_name": "Division Place Southwest",
+          "source_tags": [
+            "name:without-quadrant"
+          ],
+          "way_count": 1,
+          "core": "division",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "division place southwest",
+          "raw_name": "Division Place Southwest",
+          "source_tags": [
+            "name"
+          ],
+          "way_count": 1,
+          "core": "division",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "division street",
+          "raw_name": "Division Street Northwest",
+          "source_tags": [
+            "name:without-quadrant"
+          ],
+          "way_count": 2,
+          "core": "division",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        },
+        {
+          "normalized": "division street northwest",
+          "raw_name": "Division Street Northwest",
+          "source_tags": [
+            "name"
+          ],
+          "way_count": 2,
+          "core": "division",
+          "match_method": "exact-name",
+          "match_score": 1.0
+        }
+      ]
+    }
+  ],
+  "street_axes": [
+    {
+      "historic_core": "washington",
+      "historic_text": "WASHINGTON",
+      "modern_normalized": "washington road",
+      "modern_raw": "Washington Road",
+      "orientation": "horizontal",
+      "axis_coordinate": 354.4123903217229,
+      "ocr_confidence": 96.725,
+      "match_method": "exact-name",
+      "match_score": 1.0,
+      "labels": [
+        {
+          "historic_text": "WASHINGTON",
+          "source_x": 3116.47359375,
+          "source_y": 354.4123903217229,
+          "orientation": "horizontal",
+          "ocr_confidence": 96.725,
+          "ocr_strength": "weak"
+        }
+      ],
+      "axis_model": {
+        "a": 0.0,
+        "b": 1.0,
+        "c": -354.4123903217229,
+        "angle_degrees": 0.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "washington",
+      "historic_text": "WASHINGTON",
+      "modern_normalized": "washington place",
+      "modern_raw": "Washington Place Southwest",
+      "orientation": "horizontal",
+      "axis_coordinate": 354.4123903217229,
+      "ocr_confidence": 96.725,
+      "match_method": "exact-name",
+      "match_score": 1.0,
+      "labels": [
+        {
+          "historic_text": "WASHINGTON",
+          "source_x": 3116.47359375,
+          "source_y": 354.4123903217229,
+          "orientation": "horizontal",
+          "ocr_confidence": 96.725,
+          "ocr_strength": "weak"
+        }
+      ],
+      "axis_model": {
+        "a": 0.0,
+        "b": 1.0,
+        "c": -354.4123903217229,
+        "angle_degrees": 0.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "washington",
+      "historic_text": "WASHINGTON",
+      "modern_normalized": "washington avenue",
+      "modern_raw": "Washington Avenue",
+      "orientation": "horizontal",
+      "axis_coordinate": 354.4123903217229,
+      "ocr_confidence": 96.725,
+      "match_method": "exact-name",
+      "match_score": 1.0,
+      "labels": [
+        {
+          "historic_text": "WASHINGTON",
+          "source_x": 3116.47359375,
+          "source_y": 354.4123903217229,
+          "orientation": "horizontal",
+          "ocr_confidence": 96.725,
+          "ocr_strength": "weak"
+        }
+      ],
+      "axis_model": {
+        "a": 0.0,
+        "b": 1.0,
+        "c": -354.4123903217229,
+        "angle_degrees": 0.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "washington",
+      "historic_text": "WASHINGTON",
+      "modern_normalized": "washington circle",
+      "modern_raw": "Washington Circle",
+      "orientation": "horizontal",
+      "axis_coordinate": 354.4123903217229,
+      "ocr_confidence": 96.725,
+      "match_method": "exact-name",
+      "match_score": 1.0,
+      "labels": [
+        {
+          "historic_text": "WASHINGTON",
+          "source_x": 3116.47359375,
+          "source_y": 354.4123903217229,
+          "orientation": "horizontal",
+          "ocr_confidence": 96.725,
+          "ocr_strength": "weak"
+        }
+      ],
+      "axis_model": {
+        "a": 0.0,
+        "b": 1.0,
+        "c": -354.4123903217229,
+        "angle_degrees": 0.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "washington",
+      "historic_text": "WASHINGTON",
+      "modern_normalized": "washington street",
+      "modern_raw": "Washington Street",
+      "orientation": "horizontal",
+      "axis_coordinate": 354.4123903217229,
+      "ocr_confidence": 96.725,
+      "match_method": "exact-name",
+      "match_score": 1.0,
+      "labels": [
+        {
+          "historic_text": "WASHINGTON",
+          "source_x": 3116.47359375,
+          "source_y": 354.4123903217229,
+          "orientation": "horizontal",
+          "ocr_confidence": 96.725,
+          "ocr_strength": "weak"
+        }
+      ],
+      "axis_model": {
+        "a": 0.0,
+        "b": 1.0,
+        "c": -354.4123903217229,
+        "angle_degrees": 0.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "washington",
+      "historic_text": "WASHINGTON",
+      "modern_normalized": "washington place southwest",
+      "modern_raw": "Washington Place Southwest",
+      "orientation": "horizontal",
+      "axis_coordinate": 354.4123903217229,
+      "ocr_confidence": 96.725,
+      "match_method": "exact-name",
+      "match_score": 1.0,
+      "labels": [
+        {
+          "historic_text": "WASHINGTON",
+          "source_x": 3116.47359375,
+          "source_y": 354.4123903217229,
+          "orientation": "horizontal",
+          "ocr_confidence": 96.725,
+          "ocr_strength": "weak"
+        }
+      ],
+      "axis_model": {
+        "a": 0.0,
+        "b": 1.0,
+        "c": -354.4123903217229,
+        "angle_degrees": 0.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "pulliam",
+      "historic_text": "PULLIAM",
+      "modern_normalized": "pulliam street",
+      "modern_raw": "Pulliam Street Southwest",
+      "orientation": "horizontal",
+      "axis_coordinate": 3047.7392980590266,
+      "ocr_confidence": 96.641,
+      "match_method": "exact-name",
+      "match_score": 1.0,
+      "labels": [
+        {
+          "historic_text": "PULLIAM",
+          "source_x": 3089.5270312499997,
+          "source_y": 3047.7392980590266,
+          "orientation": "horizontal",
+          "ocr_confidence": 96.641,
+          "ocr_strength": "weak"
+        }
+      ],
+      "axis_model": {
+        "a": 0.0,
+        "b": 1.0,
+        "c": -3047.7392980590266,
+        "angle_degrees": 0.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "pulliam",
+      "historic_text": "PULLIAM",
+      "modern_normalized": "pulliam street southwest",
+      "modern_raw": "Pulliam Street Southwest",
+      "orientation": "horizontal",
+      "axis_coordinate": 3047.7392980590266,
+      "ocr_confidence": 96.641,
+      "match_method": "exact-name",
+      "match_score": 1.0,
+      "labels": [
+        {
+          "historic_text": "PULLIAM",
+          "source_x": 3089.5270312499997,
+          "source_y": 3047.7392980590266,
+          "orientation": "horizontal",
+          "ocr_confidence": 96.641,
+          "ocr_strength": "weak"
+        }
+      ],
+      "axis_model": {
+        "a": 0.0,
+        "b": 1.0,
+        "c": -3047.7392980590266,
+        "angle_degrees": 0.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "pryor",
+      "historic_text": "PRYOR",
+      "modern_normalized": "pryor road",
+      "modern_raw": "Pryor Road",
+      "orientation": "horizontal",
+      "axis_coordinate": 7231.774461579366,
+      "ocr_confidence": 96.586,
+      "match_method": "exact-name",
+      "match_score": 1.0,
+      "labels": [
+        {
+          "historic_text": "PRYOR",
+          "source_x": 3223.2234375,
+          "source_y": 7221.929672959319,
+          "orientation": "horizontal",
+          "ocr_confidence": 96.586,
+          "ocr_strength": "weak-token"
+        },
+        {
+          "historic_text": "Pryor",
+          "source_x": 3195.24046875,
+          "source_y": 7241.619250199414,
+          "orientation": "horizontal",
+          "ocr_confidence": 95.149,
+          "ocr_strength": "word"
+        }
+      ],
+      "axis_model": {
+        "a": 0.0,
+        "b": 1.0,
+        "c": -7221.929672959319,
+        "angle_degrees": 0.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "pryor",
+      "historic_text": "PRYOR",
+      "modern_normalized": "pryor circle",
+      "modern_raw": "Pryor Circle Southwest",
+      "orientation": "horizontal",
+      "axis_coordinate": 7231.774461579366,
+      "ocr_confidence": 96.586,
+      "match_method": "exact-name",
+      "match_score": 1.0,
+      "labels": [
+        {
+          "historic_text": "PRYOR",
+          "source_x": 3223.2234375,
+          "source_y": 7221.929672959319,
+          "orientation": "horizontal",
+          "ocr_confidence": 96.586,
+          "ocr_strength": "weak-token"
+        },
+        {
+          "historic_text": "Pryor",
+          "source_x": 3195.24046875,
+          "source_y": 7241.619250199414,
+          "orientation": "horizontal",
+          "ocr_confidence": 95.149,
+          "ocr_strength": "word"
+        }
+      ],
+      "axis_model": {
+        "a": 0.0,
+        "b": 1.0,
+        "c": -7221.929672959319,
+        "angle_degrees": 0.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "pryor",
+      "historic_text": "PRYOR",
+      "modern_normalized": "pryor street",
+      "modern_raw": "Pryor Street",
+      "orientation": "horizontal",
+      "axis_coordinate": 7231.774461579366,
+      "ocr_confidence": 96.586,
+      "match_method": "exact-name",
+      "match_score": 1.0,
+      "labels": [
+        {
+          "historic_text": "PRYOR",
+          "source_x": 3223.2234375,
+          "source_y": 7221.929672959319,
+          "orientation": "horizontal",
+          "ocr_confidence": 96.586,
+          "ocr_strength": "weak-token"
+        },
+        {
+          "historic_text": "Pryor",
+          "source_x": 3195.24046875,
+          "source_y": 7241.619250199414,
+          "orientation": "horizontal",
+          "ocr_confidence": 95.149,
+          "ocr_strength": "word"
+        }
+      ],
+      "axis_model": {
+        "a": 0.0,
+        "b": 1.0,
+        "c": -7221.929672959319,
+        "angle_degrees": 0.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "pryor",
+      "historic_text": "PRYOR",
+      "modern_normalized": "pryor road southwest",
+      "modern_raw": "Pryor Road Southwest",
+      "orientation": "horizontal",
+      "axis_coordinate": 7231.774461579366,
+      "ocr_confidence": 96.586,
+      "match_method": "exact-name",
+      "match_score": 1.0,
+      "labels": [
+        {
+          "historic_text": "PRYOR",
+          "source_x": 3223.2234375,
+          "source_y": 7221.929672959319,
+          "orientation": "horizontal",
+          "ocr_confidence": 96.586,
+          "ocr_strength": "weak-token"
+        },
+        {
+          "historic_text": "Pryor",
+          "source_x": 3195.24046875,
+          "source_y": 7241.619250199414,
+          "orientation": "horizontal",
+          "ocr_confidence": 95.149,
+          "ocr_strength": "word"
+        }
+      ],
+      "axis_model": {
+        "a": 0.0,
+        "b": 1.0,
+        "c": -7221.929672959319,
+        "angle_degrees": 0.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "pryor",
+      "historic_text": "PRYOR",
+      "modern_normalized": "pryor circle southwest",
+      "modern_raw": "Pryor Circle Southwest",
+      "orientation": "horizontal",
+      "axis_coordinate": 7231.774461579366,
+      "ocr_confidence": 96.586,
+      "match_method": "exact-name",
+      "match_score": 1.0,
+      "labels": [
+        {
+          "historic_text": "PRYOR",
+          "source_x": 3223.2234375,
+          "source_y": 7221.929672959319,
+          "orientation": "horizontal",
+          "ocr_confidence": 96.586,
+          "ocr_strength": "weak-token"
+        },
+        {
+          "historic_text": "Pryor",
+          "source_x": 3195.24046875,
+          "source_y": 7241.619250199414,
+          "orientation": "horizontal",
+          "ocr_confidence": 95.149,
+          "ocr_strength": "word"
+        }
+      ],
+      "axis_model": {
+        "a": 0.0,
+        "b": 1.0,
+        "c": -7221.929672959319,
+        "angle_degrees": 0.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "pryor",
+      "historic_text": "PRYOR",
+      "modern_normalized": "pryor street southwest",
+      "modern_raw": "Pryor Street Southwest",
+      "orientation": "horizontal",
+      "axis_coordinate": 7231.774461579366,
+      "ocr_confidence": 96.586,
+      "match_method": "exact-name",
+      "match_score": 1.0,
+      "labels": [
+        {
+          "historic_text": "PRYOR",
+          "source_x": 3223.2234375,
+          "source_y": 7221.929672959319,
+          "orientation": "horizontal",
+          "ocr_confidence": 96.586,
+          "ocr_strength": "weak-token"
+        },
+        {
+          "historic_text": "Pryor",
+          "source_x": 3195.24046875,
+          "source_y": 7241.619250199414,
+          "orientation": "horizontal",
+          "ocr_confidence": 95.149,
+          "ocr_strength": "word"
+        }
+      ],
+      "axis_model": {
+        "a": 0.0,
+        "b": 1.0,
+        "c": -7221.929672959319,
+        "angle_degrees": 0.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "crumley",
+      "historic_text": "CRUMLEY",
+      "modern_normalized": "crumley street",
+      "modern_raw": "Crumley Street Southeast",
+      "orientation": "vertical",
+      "axis_coordinate": 288.12093749999997,
+      "ocr_confidence": 96.261,
+      "match_method": "exact-name",
+      "match_score": 1.0,
+      "labels": [
+        {
+          "historic_text": "CRUMLEY",
+          "source_x": 288.12093749999997,
+          "source_y": 3790.761765487902,
+          "orientation": "vertical",
+          "ocr_confidence": 96.261,
+          "ocr_strength": "weak-token"
+        },
+        {
+          "historic_text": "\u2014] CRUMLEY =a",
+          "source_x": 233.19140625,
+          "source_y": 3624.9547992555167,
+          "orientation": "vertical",
+          "ocr_confidence": 61.516,
+          "ocr_strength": "weak"
+        },
+        {
+          "historic_text": "Crumley",
+          "source_x": 302.630625,
+          "source_y": 3875.737835681999,
+          "orientation": "vertical",
+          "ocr_confidence": 28.948,
+          "ocr_strength": "word"
+        }
+      ],
+      "axis_model": {
+        "a": 1.0,
+        "b": 0.0,
+        "c": -288.12093749999997,
+        "angle_degrees": 90.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "crumley",
+      "historic_text": "CRUMLEY",
+      "modern_normalized": "crumley street southeast",
+      "modern_raw": "Crumley Street Southeast",
+      "orientation": "vertical",
+      "axis_coordinate": 288.12093749999997,
+      "ocr_confidence": 96.261,
+      "match_method": "exact-name",
+      "match_score": 1.0,
+      "labels": [
+        {
+          "historic_text": "CRUMLEY",
+          "source_x": 288.12093749999997,
+          "source_y": 3790.761765487902,
+          "orientation": "vertical",
+          "ocr_confidence": 96.261,
+          "ocr_strength": "weak-token"
+        },
+        {
+          "historic_text": "\u2014] CRUMLEY =a",
+          "source_x": 233.19140625,
+          "source_y": 3624.9547992555167,
+          "orientation": "vertical",
+          "ocr_confidence": 61.516,
+          "ocr_strength": "weak"
+        },
+        {
+          "historic_text": "Crumley",
+          "source_x": 302.630625,
+          "source_y": 3875.737835681999,
+          "orientation": "vertical",
+          "ocr_confidence": 28.948,
+          "ocr_strength": "word"
+        }
+      ],
+      "axis_model": {
+        "a": 1.0,
+        "b": 0.0,
+        "c": -288.12093749999997,
+        "angle_degrees": 90.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "crumley",
+      "historic_text": "CRUMLEY",
+      "modern_normalized": "crumley street southwest",
+      "modern_raw": "Crumley Street Southwest",
+      "orientation": "vertical",
+      "axis_coordinate": 288.12093749999997,
+      "ocr_confidence": 96.261,
+      "match_method": "exact-name",
+      "match_score": 1.0,
+      "labels": [
+        {
+          "historic_text": "CRUMLEY",
+          "source_x": 288.12093749999997,
+          "source_y": 3790.761765487902,
+          "orientation": "vertical",
+          "ocr_confidence": 96.261,
+          "ocr_strength": "weak-token"
+        },
+        {
+          "historic_text": "\u2014] CRUMLEY =a",
+          "source_x": 233.19140625,
+          "source_y": 3624.9547992555167,
+          "orientation": "vertical",
+          "ocr_confidence": 61.516,
+          "ocr_strength": "weak"
+        },
+        {
+          "historic_text": "Crumley",
+          "source_x": 302.630625,
+          "source_y": 3875.737835681999,
+          "orientation": "vertical",
+          "ocr_confidence": 28.948,
+          "ocr_strength": "word"
+        }
+      ],
+      "axis_model": {
+        "a": 1.0,
+        "b": 0.0,
+        "c": -288.12093749999997,
+        "angle_degrees": 90.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "central",
+      "historic_text": "CENTRAL",
+      "modern_normalized": "central avenue",
+      "modern_raw": "Central Avenue",
+      "orientation": "horizontal",
+      "axis_coordinate": 5141.052246742887,
+      "ocr_confidence": 96.175,
+      "match_method": "exact-name",
+      "match_score": 1.0,
+      "labels": [
+        {
+          "historic_text": "CENTRAL",
+          "source_x": 3168.29390625,
+          "source_y": 5141.052246742887,
+          "orientation": "horizontal",
+          "ocr_confidence": 96.175,
+          "ocr_strength": "weak-token"
+        }
+      ],
+      "axis_model": {
+        "a": 0.0,
+        "b": 1.0,
+        "c": -5141.052246742887,
+        "angle_degrees": 0.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "elle",
+      "historic_text": "ELLE",
+      "modern_normalized": "elle court",
+      "modern_raw": "Elle Court",
+      "orientation": "horizontal",
+      "axis_coordinate": 1968.9577240095718,
+      "ocr_confidence": 56.534,
+      "match_method": "exact-name",
+      "match_score": 1.0,
+      "labels": [
+        {
+          "historic_text": "ELLE",
+          "source_x": 2638.6903125,
+          "source_y": 1968.9577240095718,
+          "orientation": "horizontal",
+          "ocr_confidence": 56.534,
+          "ocr_strength": "weak-token"
+        }
+      ],
+      "axis_model": {
+        "a": 0.0,
+        "b": 1.0,
+        "c": -1968.9577240095718,
+        "angle_degrees": 0.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "elle",
+      "historic_text": "ELLE",
+      "modern_normalized": "elle court southeast",
+      "modern_raw": "Elle Court Southeast",
+      "orientation": "horizontal",
+      "axis_coordinate": 1968.9577240095718,
+      "ocr_confidence": 56.534,
+      "match_method": "exact-name",
+      "match_score": 1.0,
+      "labels": [
+        {
+          "historic_text": "ELLE",
+          "source_x": 2638.6903125,
+          "source_y": 1968.9577240095718,
+          "orientation": "horizontal",
+          "ocr_confidence": 56.534,
+          "ocr_strength": "weak-token"
+        }
+      ],
+      "axis_model": {
+        "a": 0.0,
+        "b": 1.0,
+        "c": -1968.9577240095718,
+        "angle_degrees": 0.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "wanes",
+      "historic_text": "Wanes",
+      "modern_normalized": "waynes court",
+      "modern_raw": "Waynes Court Southeast",
+      "orientation": "horizontal",
+      "axis_coordinate": 3088.1547460781703,
+      "ocr_confidence": 25.498,
+      "match_method": "fuzzy-name",
+      "match_score": 0.9090909090909091,
+      "labels": [
+        {
+          "historic_text": "Wanes",
+          "source_x": 262.21078124999997,
+          "source_y": 3088.1547460781703,
+          "orientation": "horizontal",
+          "ocr_confidence": 25.498,
+          "ocr_strength": "word"
+        }
+      ],
+      "axis_model": {
+        "a": 0.0,
+        "b": 1.0,
+        "c": -3088.1547460781703,
+        "angle_degrees": 0.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "wanes",
+      "historic_text": "Wanes",
+      "modern_normalized": "waynes court southeast",
+      "modern_raw": "Waynes Court Southeast",
+      "orientation": "horizontal",
+      "axis_coordinate": 3088.1547460781703,
+      "ocr_confidence": 25.498,
+      "match_method": "fuzzy-name",
+      "match_score": 0.9090909090909091,
+      "labels": [
+        {
+          "historic_text": "Wanes",
+          "source_x": 262.21078124999997,
+          "source_y": 3088.1547460781703,
+          "orientation": "horizontal",
+          "ocr_confidence": 25.498,
+          "ocr_strength": "word"
+        }
+      ],
+      "axis_model": {
+        "a": 0.0,
+        "b": 1.0,
+        "c": -3088.1547460781703,
+        "angle_degrees": 0.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "georgia",
+      "historic_text": "Georgia",
+      "modern_normalized": "georgia avenue",
+      "modern_raw": "Georgia Avenue",
+      "orientation": "vertical",
+      "axis_coordinate": 6145.8890625,
+      "ocr_confidence": 95.884,
+      "match_method": "exact-name",
+      "match_score": 1.0,
+      "labels": [
+        {
+          "historic_text": "Georgia",
+          "source_x": 6145.8890625,
+          "source_y": 4062.270672693432,
+          "orientation": "vertical",
+          "ocr_confidence": 95.884,
+          "ocr_strength": "word"
+        }
+      ],
+      "axis_model": {
+        "a": 1.0,
+        "b": 0.0,
+        "c": -6145.8890625,
+        "angle_degrees": 90.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "revere",
+      "historic_text": "Revere",
+      "modern_normalized": "revere road",
+      "modern_raw": "Revere Road Southwest",
+      "orientation": "horizontal",
+      "axis_coordinate": 7210.530444030843,
+      "ocr_confidence": 30.828,
+      "match_method": "exact-name",
+      "match_score": 1.0,
+      "labels": [
+        {
+          "historic_text": "Revere",
+          "source_x": 3539.32734375,
+          "source_y": 7210.530444030843,
+          "orientation": "horizontal",
+          "ocr_confidence": 30.828,
+          "ocr_strength": "word"
+        }
+      ],
+      "axis_model": {
+        "a": 0.0,
+        "b": 1.0,
+        "c": -7210.530444030843,
+        "angle_degrees": 0.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "revere",
+      "historic_text": "Revere",
+      "modern_normalized": "revere court",
+      "modern_raw": "Revere Court",
+      "orientation": "horizontal",
+      "axis_coordinate": 7210.530444030843,
+      "ocr_confidence": 30.828,
+      "match_method": "exact-name",
+      "match_score": 1.0,
+      "labels": [
+        {
+          "historic_text": "Revere",
+          "source_x": 3539.32734375,
+          "source_y": 7210.530444030843,
+          "orientation": "horizontal",
+          "ocr_confidence": 30.828,
+          "ocr_strength": "word"
+        }
+      ],
+      "axis_model": {
+        "a": 0.0,
+        "b": 1.0,
+        "c": -7210.530444030843,
+        "angle_degrees": 0.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "revere",
+      "historic_text": "Revere",
+      "modern_normalized": "revere drive",
+      "modern_raw": "Revere Drive Northwest",
+      "orientation": "horizontal",
+      "axis_coordinate": 7210.530444030843,
+      "ocr_confidence": 30.828,
+      "match_method": "exact-name",
+      "match_score": 1.0,
+      "labels": [
+        {
+          "historic_text": "Revere",
+          "source_x": 3539.32734375,
+          "source_y": 7210.530444030843,
+          "orientation": "horizontal",
+          "ocr_confidence": 30.828,
+          "ocr_strength": "word"
+        }
+      ],
+      "axis_model": {
+        "a": 0.0,
+        "b": 1.0,
+        "c": -7210.530444030843,
+        "angle_degrees": 0.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "revere",
+      "historic_text": "Revere",
+      "modern_normalized": "revere road southwest",
+      "modern_raw": "Revere Road Southwest",
+      "orientation": "horizontal",
+      "axis_coordinate": 7210.530444030843,
+      "ocr_confidence": 30.828,
+      "match_method": "exact-name",
+      "match_score": 1.0,
+      "labels": [
+        {
+          "historic_text": "Revere",
+          "source_x": 3539.32734375,
+          "source_y": 7210.530444030843,
+          "orientation": "horizontal",
+          "ocr_confidence": 30.828,
+          "ocr_strength": "word"
+        }
+      ],
+      "axis_model": {
+        "a": 0.0,
+        "b": 1.0,
+        "c": -7210.530444030843,
+        "angle_degrees": 0.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "revere",
+      "historic_text": "Revere",
+      "modern_normalized": "revere drive northwest",
+      "modern_raw": "Revere Drive Northwest",
+      "orientation": "horizontal",
+      "axis_coordinate": 7210.530444030843,
+      "ocr_confidence": 30.828,
+      "match_method": "exact-name",
+      "match_score": 1.0,
+      "labels": [
+        {
+          "historic_text": "Revere",
+          "source_x": 3539.32734375,
+          "source_y": 7210.530444030843,
+          "orientation": "horizontal",
+          "ocr_confidence": 30.828,
+          "ocr_strength": "word"
+        }
+      ],
+      "axis_model": {
+        "a": 0.0,
+        "b": 1.0,
+        "c": -7210.530444030843,
+        "angle_degrees": 0.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "division",
+      "historic_text": "Division",
+      "modern_normalized": "division place",
+      "modern_raw": "Division Place Southwest",
+      "orientation": "horizontal",
+      "axis_coordinate": 7568.051714969422,
+      "ocr_confidence": 46.169,
+      "match_method": "exact-name",
+      "match_score": 1.0,
+      "labels": [
+        {
+          "historic_text": "Division",
+          "source_x": 5741.690624999999,
+          "source_y": 7568.051714969422,
+          "orientation": "horizontal",
+          "ocr_confidence": 46.169,
+          "ocr_strength": "word"
+        }
+      ],
+      "axis_model": {
+        "a": 0.0,
+        "b": 1.0,
+        "c": -7568.051714969422,
+        "angle_degrees": 0.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "division",
+      "historic_text": "Division",
+      "modern_normalized": "division street",
+      "modern_raw": "Division Street Northwest",
+      "orientation": "horizontal",
+      "axis_coordinate": 7568.051714969422,
+      "ocr_confidence": 46.169,
+      "match_method": "exact-name",
+      "match_score": 1.0,
+      "labels": [
+        {
+          "historic_text": "Division",
+          "source_x": 5741.690624999999,
+          "source_y": 7568.051714969422,
+          "orientation": "horizontal",
+          "ocr_confidence": 46.169,
+          "ocr_strength": "word"
+        }
+      ],
+      "axis_model": {
+        "a": 0.0,
+        "b": 1.0,
+        "c": -7568.051714969422,
+        "angle_degrees": 0.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "division",
+      "historic_text": "Division",
+      "modern_normalized": "division place southwest",
+      "modern_raw": "Division Place Southwest",
+      "orientation": "horizontal",
+      "axis_coordinate": 7568.051714969422,
+      "ocr_confidence": 46.169,
+      "match_method": "exact-name",
+      "match_score": 1.0,
+      "labels": [
+        {
+          "historic_text": "Division",
+          "source_x": 5741.690624999999,
+          "source_y": 7568.051714969422,
+          "orientation": "horizontal",
+          "ocr_confidence": 46.169,
+          "ocr_strength": "word"
+        }
+      ],
+      "axis_model": {
+        "a": 0.0,
+        "b": 1.0,
+        "c": -7568.051714969422,
+        "angle_degrees": 0.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    },
+    {
+      "historic_core": "division",
+      "historic_text": "Division",
+      "modern_normalized": "division street northwest",
+      "modern_raw": "Division Street Northwest",
+      "orientation": "horizontal",
+      "axis_coordinate": 7568.051714969422,
+      "ocr_confidence": 46.169,
+      "match_method": "exact-name",
+      "match_score": 1.0,
+      "labels": [
+        {
+          "historic_text": "Division",
+          "source_x": 5741.690624999999,
+          "source_y": 7568.051714969422,
+          "orientation": "horizontal",
+          "ocr_confidence": 46.169,
+          "ocr_strength": "word"
+        }
+      ],
+      "axis_model": {
+        "a": 0.0,
+        "b": 1.0,
+        "c": -7568.051714969422,
+        "angle_degrees": 0.0,
+        "method": "ocr-label-constant",
+        "support": 1
+      }
+    }
+  ],
+  "control_candidates": [
+    {
+      "candidate_id": 1,
+      "historic_street_a": "PRYOR",
+      "historic_street_b": "CRUMLEY",
+      "modern_street_a": "Pryor Street",
+      "modern_street_b": "Crumley Street Southeast",
+      "label": "PRYOR x CRUMLEY",
+      "source_x": 288.12093749999997,
+      "source_y": 7221.929672959319,
+      "target_x": -9394759.333602883,
+      "target_y": 3993877.8509368543,
+      "lon": -84.394559,
+      "lat": 33.739509,
+      "osm_node_id": 69326337,
+      "osm_matches": [
+        {
+          "way_a": 630778918,
+          "way_b": 9270921,
+          "street_a": {
+            "raw_name": "Pryor Street Southwest",
+            "source_tag": "name:without-quadrant"
+          },
+          "street_b": {
+            "raw_name": "Crumley Street Southwest",
+            "source_tag": "name:without-quadrant"
+          }
+        }
+      ],
+      "source_evidence": {
+        "horizontal": {
+          "historic_core": "pryor",
+          "historic_text": "PRYOR",
+          "modern_normalized": "pryor street",
+          "modern_raw": "Pryor Street",
+          "orientation": "horizontal",
+          "axis_coordinate": 7231.774461579366,
+          "ocr_confidence": 96.586,
+          "match_method": "exact-name",
+          "match_score": 1.0,
+          "labels": [
+            {
+              "historic_text": "PRYOR",
+              "source_x": 3223.2234375,
+              "source_y": 7221.929672959319,
+              "orientation": "horizontal",
+              "ocr_confidence": 96.586,
+              "ocr_strength": "weak-token"
+            },
+            {
+              "historic_text": "Pryor",
+              "source_x": 3195.24046875,
+              "source_y": 7241.619250199414,
+              "orientation": "horizontal",
+              "ocr_confidence": 95.149,
+              "ocr_strength": "word"
+            }
+          ],
+          "axis_model": {
+            "a": 0.0,
+            "b": 1.0,
+            "c": -7221.929672959319,
+            "angle_degrees": 0.0,
+            "method": "ocr-label-constant",
+            "support": 1
+          }
+        },
+        "vertical": {
+          "historic_core": "crumley",
+          "historic_text": "CRUMLEY",
+          "modern_normalized": "crumley street",
+          "modern_raw": "Crumley Street Southeast",
+          "orientation": "vertical",
+          "axis_coordinate": 288.12093749999997,
+          "ocr_confidence": 96.261,
+          "match_method": "exact-name",
+          "match_score": 1.0,
+          "labels": [
+            {
+              "historic_text": "CRUMLEY",
+              "source_x": 288.12093749999997,
+              "source_y": 3790.761765487902,
+              "orientation": "vertical",
+              "ocr_confidence": 96.261,
+              "ocr_strength": "weak-token"
+            },
+            {
+              "historic_text": "\u2014] CRUMLEY =a",
+              "source_x": 233.19140625,
+              "source_y": 3624.9547992555167,
+              "orientation": "vertical",
+              "ocr_confidence": 61.516,
+              "ocr_strength": "weak"
+            },
+            {
+              "historic_text": "Crumley",
+              "source_x": 302.630625,
+              "source_y": 3875.737835681999,
+              "orientation": "vertical",
+              "ocr_confidence": 28.948,
+              "ocr_strength": "word"
+            }
+          ],
+          "axis_model": {
+            "a": 1.0,
+            "b": 0.0,
+            "c": -288.12093749999997,
+            "angle_degrees": 90.0,
+            "method": "ocr-label-constant",
+            "support": 1
+          }
+        }
+      },
+      "match_methods": [
+        "exact-name",
+        "exact-name"
+      ],
+      "pair_ambiguity_count": 1
+    }
+  ],
+  "ranked_triplets": [],
+  "expected_target_seed": null,
+  "max_seed_distance": null,
+  "instructions": "Approve a ranked triplet only after checking its source crosshairs and OSM/Kauffman overlays. Fuzzy names and multiple OSM nodes remain ambiguous.",
+  "target_seed": {
+    "status": "missing-seed",
+    "tile": 488,
+    "review_required": true,
+    "reason": "The index OCR did not produce a location seed for this tile.",
+    "provenance": {
+      "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/batch/index/tile-location-seeds.json",
+      "sha256": "074e9c8eed4bc20fc2c4073f27c32ea7854a53a32a7b88843e08170b26d72e27",
+      "schema_version": 1,
+      "created_utc": "2026-07-15T12:05:03.665915+00:00",
+      "purpose": "approximate wrong-neighborhood safeguard; never final controls",
+      "recognizer": "Apple Vision accurate local OCR with overlapping crops",
+      "index": {
+        "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/Stage 1 -Orthorectified Atlanta Maps to print/1911 Sanborn Index Orthorectified_OSM_9point_finetuned_2026-07-14.tif",
+        "sha256": "af98b5ea9139e8a89f718f4aeb08df2461c5dea25c1b46e475c951b3aede122f",
+        "size": 77999535,
+        "mtime_ns": 1784083988327946037,
+        "width": 6517,
+        "height": 8089,
+        "geotransform": [
+          -9399547.174233677,
+          1.7959458851421064,
+          0.0,
+          4003031.8490759972,
+          0.0,
+          -1.7959458851421064
+        ],
+        "crs": "EPSG:3857"
+      }
+    }
+  }
+}

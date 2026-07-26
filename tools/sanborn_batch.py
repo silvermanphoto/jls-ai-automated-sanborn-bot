@@ -878,6 +878,28 @@ def download(url: str, destination: Path, expected_bytes: int | None = None) -> 
         actual = destination.stat().st_size
         quarantine(destination, f"download size {actual} differs from LOC size {expected_bytes}")
         fail("The completed download did not match the Library of Congress byte length.")
+    clear_macos_download_warning(destination)
+
+
+def clear_macos_download_warning(path: Path) -> None:
+    """Remove the marking that makes macOS ask before opening a saved scan.
+
+    The scans come from the Library of Congress and their byte length is
+    checked above, so the warning only stands between Joel and a file he
+    already trusts. A missing marking, or a system without the tool, is
+    normal and must never interrupt a download.
+    """
+    if sys.platform != "darwin":
+        return
+    try:
+        subprocess.run(
+            ["/usr/bin/xattr", "-d", "com.apple.quarantine", str(path)],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError:
+        pass
 
 
 def image_info(path: Path) -> tuple[int, int]:
@@ -2426,6 +2448,10 @@ def cmd_packet(args: argparse.Namespace) -> int:
             str(immutable_points),
             "--review-dir",
             str(review_dir),
+            # This packet folder is brand new and already holds the immutable
+            # control copy above, so the generator's empty-folder guard would
+            # otherwise reject the very file we just placed for it.
+            "--replace",
             "--target-seed-json",
             json.dumps(seed_context, sort_keys=True),
         ]
@@ -2448,7 +2474,13 @@ def cmd_packet(args: argparse.Namespace) -> int:
             )
         for label in labels:
             command.extend(["--control-label", label])
-        subprocess.run(command, check=True)
+        try:
+            subprocess.run(command, check=True)
+        except subprocess.CalledProcessError:
+            # A half-built packet is never usable and is invisible to the app,
+            # so remove it instead of leaving it to accumulate on every retry.
+            shutil.rmtree(review_dir, ignore_errors=True)
+            raise
         transition_tile(
             db,
             tile,
@@ -2829,6 +2861,32 @@ def _preserve_incomplete_pair(output: Path, ledger: Path) -> None:
         print(f"Preserved interrupted publish for inspection: {preserved}")
 
 
+def _ledger_predates_approval(ledger: Path, points: Path, source: Path) -> bool:
+    """Report whether a finished map was made from superseded inputs.
+
+    An unreadable ledger counts as superseded: it cannot prove which controls
+    produced the map beside it, so the map is rebuilt rather than trusted.
+    """
+    try:
+        record = json.loads(ledger.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return True
+    if not isinstance(record, dict):
+        return True
+    recorded_points = record.get("points", {})
+    recorded_source = record.get("source", {})
+    if not isinstance(recorded_points, dict) or not isinstance(recorded_source, dict):
+        return True
+    try:
+        same_points = Path(str(recorded_points.get("path", ""))).resolve() == points
+        same_source = Path(str(recorded_source.get("path", ""))).resolve() == source
+    except OSError:
+        return True
+    if not same_points or not same_source:
+        return True
+    return recorded_points.get("sha256") != sha256(points)
+
+
 @command_tile_locked
 def cmd_finish(args: argparse.Namespace) -> int:
     with connect(args.database) as db:
@@ -2892,6 +2950,13 @@ def cmd_finish(args: argparse.Namespace) -> int:
         for control in review["points"]["controls"]:
             command.extend(["--control-label", control.get("label", "Control")])
         if output.exists() != ledger.exists():
+            _preserve_incomplete_pair(output, ledger)
+        if output.exists() and ledger.exists() and _ledger_predates_approval(ledger, points, source):
+            # An earlier finished map for this sheet was made from controls the
+            # current approval has replaced. Resuming would verify the old map
+            # against the new approval and stop with a confusing complaint, so
+            # set the superseded pair aside and warp again from what was approved.
+            print("An earlier finished map for this sheet used different controls.")
             _preserve_incomplete_pair(output, ledger)
         if output.exists() and ledger.exists():
             final_record = _verify_final_pair(row, output, ledger, approved_review=review)

@@ -1,0 +1,21 @@
+{
+  "approval_token": "74f70fc7398d3aba17f4b917ead1b20250476ca2b4e8fa4f0cfa6db86a7fe8d9",
+  "approved_by": "Joel Silverman (repair verification)",
+  "approved_utc": "2026-07-26T08:42:51.765782+00:00",
+  "geographic_verification": {
+    "artifact_sha256": {
+      "contact_sheet": "e3a70f355b32bb7114e59b954afdc2c4d501114f854197054cbb36f5698c2b7d",
+      "georeferenced_preview": "02b7a576154d5b8c10ca96bdb313febee024fea038c786b86c6410e0bfd3b8eb",
+      "kauffman_overlay": "db4c704176bcde10932835c3f33ffb95b96e001c6ccb72658cf16bb5acba7544",
+      "kauffman_reprojected": "1876d1847fa67cd9f2b855b984f136244fda2fc370a74143fc58ce844e415600",
+      "osm_overlay": "de20c2669fb9e02c64517e388c588a438f5df172160d94cef7f98a85ca54701d",
+      "osm_roads": "8c8c24454eee0dd8c762e2df53e78d8fb7d13b6792ea0da17a342ca21a81638b",
+      "source_crosshairs": "59c10faab1de39b699b61a13d421062e005763b16d72cb2ed3779127b987fe91",
+      "source_preview": "fca55b2045679c0823dfb2b6c0ea0e3e23f2086ce2ea3fe5a37bd12f8890ed34"
+    },
+    "note": "Hash-locked local OSM road and 1921 Kauffman overlays reviewed.",
+    "reference_method": "local-osm-and-kauffman-packet"
+  },
+  "note": "Repaired packet chain; inspected the contact sheet showing street and Kauffman agreement.",
+  "schema_version": 3
+}

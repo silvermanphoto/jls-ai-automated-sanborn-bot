@@ -1,0 +1,99 @@
+{
+  "schema_version": 3,
+  "tile": 487,
+  "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/1911 SANBORN DOWNLOADS/Sanborn 1911 -- Tile 487_georeferenced.tif",
+  "raster_sha256": "537a7de47b63f98868c821b6bf868aa7c97246c99fdd0efc06d451dd009981e1",
+  "ledger_path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/1911 SANBORN DOWNLOADS/Sanborn 1911 -- Tile 487_georeferenced.georef.json",
+  "ledger_sha256": "2beab3ce941927b6f1c49032824c18535a70ef04b4434b73084d4e11f5fe5c50",
+  "source_sha256": "4f1f72a3e0aa45c963a70c3e21ddb9f7b982432533d9d3738545e6b56c710209",
+  "points_sha256": "6c3fba5ef6402406e265f7036f4a9045c88658385a2244121eb845aa7aa6af28",
+  "review_dir": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/batch/reviews/tile-0487/packet-20260726T084247754555Z",
+  "review_sha256": "9b1eb1276a48003613f82c106c21e2e17a07fe5b8d166645aa1a26a831170c9a",
+  "approval_sha256": "849a6c6f418fb49c61bdaa226fbfaaeb65e521661069cca12908f04d1d1e3553",
+  "group": "1911 ATLANTA SANBORNS",
+  "sort_key": 487,
+  "brightness": 50,
+  "gamma": 1.2,
+  "contrast": 20,
+  "opacity": 1.0,
+  "expanded": false,
+  "save_project": false,
+  "review_token": "74f70fc7398d3aba17f4b917ead1b20250476ca2b4e8fa4f0cfa6db86a7fe8d9",
+  "geographic_verification": {
+    "artifact_sha256": {
+      "contact_sheet": "e3a70f355b32bb7114e59b954afdc2c4d501114f854197054cbb36f5698c2b7d",
+      "georeferenced_preview": "02b7a576154d5b8c10ca96bdb313febee024fea038c786b86c6410e0bfd3b8eb",
+      "kauffman_overlay": "db4c704176bcde10932835c3f33ffb95b96e001c6ccb72658cf16bb5acba7544",
+      "kauffman_reprojected": "1876d1847fa67cd9f2b855b984f136244fda2fc370a74143fc58ce844e415600",
+      "osm_overlay": "de20c2669fb9e02c64517e388c588a438f5df172160d94cef7f98a85ca54701d",
+      "osm_roads": "8c8c24454eee0dd8c762e2df53e78d8fb7d13b6792ea0da17a342ca21a81638b",
+      "source_crosshairs": "59c10faab1de39b699b61a13d421062e005763b16d72cb2ed3779127b987fe91",
+      "source_preview": "fca55b2045679c0823dfb2b6c0ea0e3e23f2086ce2ea3fe5a37bd12f8890ed34"
+    },
+    "note": "Hash-locked local OSM road and 1921 Kauffman overlays reviewed.",
+    "reference_method": "local-osm-and-kauffman"
+  },
+  "target_seed": {
+    "map_x": -9394559.622499015,
+    "map_y": 3994097.220151116,
+    "provenance": {
+      "created_utc": "2026-07-15T12:05:03.665915+00:00",
+      "index": {
+        "crs": "EPSG:3857",
+        "geotransform": [
+          -9399547.174233677,
+          1.7959458851421064,
+          0.0,
+          4003031.8490759972,
+          0.0,
+          -1.7959458851421064
+        ],
+        "height": 8089,
+        "mtime_ns": 1784083988327946037,
+        "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/Stage 1 -Orthorectified Atlanta Maps to print/1911 Sanborn Index Orthorectified_OSM_9point_finetuned_2026-07-14.tif",
+        "sha256": "af98b5ea9139e8a89f718f4aeb08df2461c5dea25c1b46e475c951b3aede122f",
+        "size": 77999535,
+        "width": 6517
+      },
+      "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/batch/index/tile-location-seeds.json",
+      "purpose": "approximate wrong-neighborhood safeguard; never final controls",
+      "recognizer": "Apple Vision accurate local OCR with overlapping crops",
+      "schema_version": 1,
+      "sha256": "074e9c8eed4bc20fc2c4073f27c32ea7854a53a32a7b88843e08170b26d72e27"
+    },
+    "quality": "high",
+    "review_required": false,
+    "seed": {
+      "alternatives": [
+        {
+          "detection_count": 3,
+          "exact_digit_reads": 1,
+          "mean_confidence": 1.0,
+          "preview_x": 1278.4027634638487,
+          "preview_y": 2290.330256448773,
+          "score": 13.5,
+          "support": 3,
+          "vision_texts": [
+            "487",
+            "487RICHARDSON",
+            "487RICHARDSOT"
+          ]
+        }
+      ],
+      "ambiguous": false,
+      "crs": "EPSG:3857",
+      "map_x": -9394559.622499015,
+      "map_y": 3994097.220151116,
+      "mean_confidence": 1.0,
+      "preview_x": 1278.4027634638487,
+      "preview_y": 2290.330256448773,
+      "quality": "high",
+      "suggested_max_distance": 250.0,
+      "support": 3,
+      "tile": 487
+    },
+    "status": "selected",
+    "suggested_max_distance": 250.0,
+    "tile": 487
+  }
+}
