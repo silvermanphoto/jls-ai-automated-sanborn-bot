@@ -19,30 +19,25 @@ import re
 import sys
 from typing import Any, Iterable
 
+import sanborn_archive
+import sanborn_collections
+from sanborn_layer_names import intersection_for_proposal
 from sanborn_review import REQUIRED_ARTIFACTS, require_approval
 
 
-PROTECTED_PROJECT = Path(
-    "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/"
-    "JLS Master Map File.qgz"
-)
-EXPECTED_CRS = "EPSG:3857"
-INDEX_LAYER_NAME = (
-    "1911 Sanborn Index Orthorectified — OSM 9-point fine-tuned (2026-07-14)"
-)
-INDEX_LAYER_SOURCE = Path(
-    "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/"
-    "Stage 1 -Orthorectified Atlanta Maps to print/"
-    "1911 Sanborn Index Orthorectified_OSM_9point_finetuned_2026-07-14.tif"
-)
-GROUP_NAME = "1911 ATLANTA SANBORNS"
-STYLE = {
-    "brightness": 50,
-    "gamma": 1.2,
-    "contrast": 20,
-    "opacity": 1.0,
-    "alpha_band": 4,
-}
+# Which body of sheets this run is placing. Everything that is specific to the
+# 1911 Atlanta sheets -- the project, the group, the index, how layers are named
+# and drawn -- comes from this record, so another year or city is a new record
+# in sanborn_collections rather than an edit here. See --collection.
+COLLECTION = sanborn_collections.get()
+
+# Kept as module-level names because the existing tests and callers read them.
+PROTECTED_PROJECT = COLLECTION.project
+EXPECTED_CRS = COLLECTION.crs
+INDEX_LAYER_NAME = COLLECTION.index_layer_name
+INDEX_LAYER_SOURCE = COLLECTION.index_layer_source
+GROUP_NAME = COLLECTION.group_name
+STYLE = dict(COLLECTION.style)
 VERIFICATION_METHOD = "local-osm-and-kauffman"
 SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 _SHA256_CACHE: dict[tuple[str, int, int, int, int, int], str] = {}
@@ -76,13 +71,50 @@ def tile_number_from_name(name: str) -> int | None:
     """Read a printed tile number without mistaking the map year for a tile."""
     patterns = (
         r"\bTile[\s_-]*(\d{1,4})(?!\d)",
-        r"\bSanborn(?:\s+1911)?[\s_-]+(?!(?:1911)\b)(\d{1,4})(?!\d)",
+        r"\bSanborn(?:\s+1[89]\d\d)?[\s_-]+(?!(?:1[89]\d\d)\b)(\d{1,4})(?!\d)",
     )
     for pattern in patterns:
         match = re.search(pattern, name, flags=re.IGNORECASE)
         if match:
             return int(match.group(1))
     return None
+
+
+def proposal_path_for_tile(tile: int, collection=None) -> Path:
+    """Where the control proposal for one sheet is kept."""
+    del collection  # Reserved: a future collection may keep proposals elsewhere.
+    return (
+        Path(__file__).resolve().parent.parent
+        / "batch"
+        / "proposals"
+        / f"tile-{tile:04d}.json"
+    )
+
+
+def layer_name_for_tile(tile: int, collection=None) -> str:
+    """What this sheet is called in Joel's layer list.
+
+    ``Sanborn 1911 - tile 486 (Main & Washington)``.  The crossroads comes from
+    the sheet's own control proposal, which already holds intersections read off
+    the printed map and confirmed against a real junction in OpenStreetMap.  A
+    sheet with no proposal -- the ones georeferenced before this engine existed
+    -- simply gets no parenthesis rather than a wrong or invented one.
+
+    Deliberately built from the tile number and the streets, never from the file
+    name, which is how "_georeferenced" and the older working titles stop
+    reaching the project.
+    """
+    active = collection or COLLECTION
+    intersection = None
+    proposal_file = proposal_path_for_tile(tile, active)
+    if proposal_file.exists():
+        try:
+            proposal = json.loads(proposal_file.read_text(encoding="utf-8"))
+            intersection = intersection_for_proposal(proposal, active.osm_database)
+        except (OSError, ValueError, KeyError):
+            # A naming aid must never stop a verified sheet from being placed.
+            intersection = None
+    return active.layer_name(tile, intersection)
 
 
 def _required(record: dict[str, Any], key: str, manifest: Path) -> Any:
@@ -550,7 +582,7 @@ def load_manifest(path: Path) -> dict[str, Any]:
         "tile": tile,
         "sort_key": tile,
         "path": str(raster),
-        "layer_name": raster.stem,
+        "layer_name": layer_name_for_tile(tile),
         "manifest": str(manifest),
         "raster_sha256": raster_digest,
         "ledger_path": str(ledger),
@@ -713,7 +745,7 @@ def _sanborn_layer_source(layer):
 def _sanborn_tile_number(name):
     for pattern in (
         r"\bTile[\s_-]*(\d{1,4})(?!\d)",
-        r"\bSanborn(?:\s+1911)?[\s_-]+(?!(?:1911)\b)(\d{1,4})(?!\d)",
+        r"\bSanborn(?:\s+1[89]\d\d)?[\s_-]+(?!(?:1[89]\d\d)\b)(\d{1,4})(?!\d)",
     ):
         match = re.search(pattern, name, flags=re.IGNORECASE)
         if match:
@@ -1296,6 +1328,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         )
     )
     parser.add_argument("manifests", nargs="+", type=Path)
+    parser.add_argument(
+        "--collection",
+        default=sanborn_collections.DEFAULT_COLLECTION,
+        choices=sorted(sanborn_collections.COLLECTIONS),
+        help=(
+            "Which body of sheets is being placed. Defaults to the 1911 Atlanta "
+            "sheets; other years and cities are added in sanborn_collections.py."
+        ),
+    )
+    parser.add_argument(
+        "--skip-archive",
+        action="store_true",
+        help=(
+            "Do not copy the QGIS project into the dated archive first. Only for "
+            "dry runs and tests; a real import should always leave a way back."
+        ),
+    )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--dry-run", action="store_const", const="plan", dest="mode")
     mode.add_argument("--emit-code", action="store_const", const="code", dest="mode")
@@ -1313,7 +1362,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     try:
         args = parse_args(argv)
+        collection = sanborn_collections.get(args.collection)
         plan = build_plan(args.manifests)
+
+        # Take the dated copy before emitting anything that would change the
+        # project. A dry run is only a printout, so it does not need one.
+        if args.mode != "plan" and not args.skip_archive:
+            target, replaced = sanborn_archive.archive_project(collection.project)
+            verb = "Replaced today's" if replaced else "Saved a"
+            print(
+                f"{verb} copy of your QGIS project at {target}",
+                file=sys.stderr,
+            )
+
         if args.mode == "code":
             print(generate_pyqgis_code(plan), end="")
         elif args.mode == "payload":
@@ -1324,6 +1385,9 @@ def main(argv: list[str] | None = None) -> int:
     except ManifestError as exc:
         print(f"Stopped: {exc}", file=sys.stderr)
         return 2
+    except sanborn_archive.ArchiveError as exc:
+        print(f"Stopped before changing anything: {exc}", file=sys.stderr)
+        return 3
 
 
 if __name__ == "__main__":
