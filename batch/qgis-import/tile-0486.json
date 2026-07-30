@@ -1,0 +1,98 @@
+{
+  "schema_version": 3,
+  "tile": 486,
+  "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/1911 SANBORN DOWNLOADS/Sanborn 1911 -- Tile 486_georeferenced.tif",
+  "raster_sha256": "9cc9cace2d89d15395c2222011e6ebee586544a8faf200210d23ff93bf3f37ef",
+  "ledger_path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/1911 SANBORN DOWNLOADS/Sanborn 1911 -- Tile 486_georeferenced.georef.json",
+  "ledger_sha256": "348692291486358a63084dbee52762a69ceee745df4143ab105cb269877ca982",
+  "source_sha256": "1ca62455ce10373a04dec9ce33810379791117194ea727e82808f100b64cc6f8",
+  "points_sha256": "7d050ed756133f2e9fdc36191cf7dcd1812d082f1c5f13824d7f7002ea8e135e",
+  "review_dir": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/batch/reviews/tile-0486/packet-20260727T081456963251Z",
+  "review_sha256": "9cf6eb0da5334f1ddd367440da1e9597379a54e80453383c6116d99fcfc6d743",
+  "approval_sha256": "35c2a7febb6e25103050030724a02bda2dbf04093650c95f1d3989e3a104e504",
+  "group": "1911 ATLANTA SANBORNS",
+  "sort_key": 486,
+  "brightness": 50,
+  "gamma": 1.2,
+  "contrast": 20,
+  "opacity": 1.0,
+  "expanded": false,
+  "save_project": false,
+  "review_token": "6cc20d85b83fdc27235bc84b7f7fe98348e8fe1516831c22334b2f94991436ec",
+  "geographic_verification": {
+    "artifact_sha256": {
+      "contact_sheet": "f889ae958203488e719ad7c90c259c7be4a933fc8de886aad0b447f117a91644",
+      "georeferenced_preview": "55b76d9a4f2d42608e5ccbe45415dcabd793eb01dbba5f0d1d71753ab9b41eff",
+      "kauffman_overlay": "521ac3169ad99b32f131157d6b76993167a151813c9a8b93936ea38659c11248",
+      "kauffman_reprojected": "e2a85f4bdfb92f98f85c0a24198cddd0c2560164570a7716384fe162b2d0f35b",
+      "osm_overlay": "2511dfc309d5bd21dbed5311a9a8939caa0a2572a1bca30a1901749fb9ddd448",
+      "osm_roads": "e5c369c375ac274de37a1b4f7c633f1d06255edd2f34bf45af3eb5c2f8f48de5",
+      "source_crosshairs": "d314cea99d9003d782630ada2e58d0037890530163e0287b55bb7cd8a6f8eb48",
+      "source_preview": "6e5c691e017de1d4d665930ab2bf960fb056622724d55471817feebd8213c081"
+    },
+    "note": "Hash-locked local OSM road and 1921 Kauffman overlays reviewed.",
+    "reference_method": "local-osm-and-kauffman"
+  },
+  "target_seed": {
+    "map_x": -9394513.64560899,
+    "map_y": 3994415.4665339743,
+    "provenance": {
+      "created_utc": "2026-07-15T12:05:03.665915+00:00",
+      "index": {
+        "crs": "EPSG:3857",
+        "geotransform": [
+          -9399547.174233677,
+          1.7959458851421064,
+          0.0,
+          4003031.8490759972,
+          0.0,
+          -1.7959458851421064
+        ],
+        "height": 8089,
+        "mtime_ns": 1784083988327946037,
+        "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/Stage 1 -Orthorectified Atlanta Maps to print/1911 Sanborn Index Orthorectified_OSM_9point_finetuned_2026-07-14.tif",
+        "sha256": "af98b5ea9139e8a89f718f4aeb08df2461c5dea25c1b46e475c951b3aede122f",
+        "size": 77999535,
+        "width": 6517
+      },
+      "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/batch/index/tile-location-seeds.json",
+      "purpose": "approximate wrong-neighborhood safeguard; never final controls",
+      "recognizer": "Apple Vision accurate local OCR with overlapping crops",
+      "schema_version": 1,
+      "sha256": "074e9c8eed4bc20fc2c4073f27c32ea7854a53a32a7b88843e08170b26d72e27"
+    },
+    "quality": "high",
+    "review_required": false,
+    "seed": {
+      "alternatives": [
+        {
+          "detection_count": 4,
+          "exact_digit_reads": 3,
+          "mean_confidence": 1.0,
+          "preview_x": 1290.1875000223213,
+          "preview_y": 2208.7499999217857,
+          "score": 20.5,
+          "support": 4,
+          "vision_texts": [
+            "486",
+            "L486"
+          ]
+        }
+      ],
+      "ambiguous": false,
+      "crs": "EPSG:3857",
+      "map_x": -9394513.64560899,
+      "map_y": 3994415.4665339743,
+      "mean_confidence": 1.0,
+      "preview_x": 1290.1875000223213,
+      "preview_y": 2208.7499999217857,
+      "quality": "high",
+      "suggested_max_distance": 250.0,
+      "support": 4,
+      "tile": 486
+    },
+    "status": "selected",
+    "suggested_max_distance": 250.0,
+    "tile": 486
+  }
+}

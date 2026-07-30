@@ -13,6 +13,7 @@ import argparse
 from collections import defaultdict
 from datetime import datetime, timezone
 import difflib
+import hashlib
 from itertools import combinations
 import json
 import math
@@ -23,9 +24,13 @@ import statistics
 import sys
 from typing import Iterable
 
+import cv2
+import numpy as np
+
 from sanborn_georeference import (
     affine_diagnostics,
     affine_safety_warnings,
+    read_points,
     split_affine_safety_warnings,
 )
 from sanborn_geometry import StreetGeometry, constant_axis, intersect_axes
@@ -73,6 +78,14 @@ def fail(message: str) -> "NoReturn":
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def name_core(value: str) -> str:
@@ -673,6 +686,246 @@ def _parse_source_corrections(values: list[str]) -> dict[int, tuple[float, float
     return corrections
 
 
+def _read_gray(path: Path, description: str) -> np.ndarray:
+    image = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
+    if image is None or image.ndim != 2:
+        fail(f"OpenCV could not read the {description}: {path}")
+    if image.shape[0] < 500 or image.shape[1] < 500:
+        fail(f"The {description} is too small to register safely.")
+    return image
+
+
+def _registration_scale(image: np.ndarray, maximum_dimension: int = 2200) -> float:
+    return min(1.0, maximum_dimension / float(max(image.shape)))
+
+
+def register_reviewed_scan(
+    reviewed_source: Path,
+    current_source: Path,
+) -> tuple[np.ndarray, dict]:
+    """Map reviewed source pixels onto another scan of the same printed sheet.
+
+    A prior control file is geographic evidence, not a pixel-coordinate match.
+    Library of Congress derivatives can have different borders, sizes, or a
+    slight scan rotation, so those pixels must be registered rather than copied.
+    """
+    reviewed = _read_gray(reviewed_source, "previously reviewed scan")
+    current = _read_gray(current_source, "current scan")
+    reviewed_scale = _registration_scale(reviewed)
+    current_scale = _registration_scale(current)
+    reviewed_small = cv2.resize(
+        reviewed,
+        None,
+        fx=reviewed_scale,
+        fy=reviewed_scale,
+        interpolation=cv2.INTER_AREA,
+    )
+    current_small = cv2.resize(
+        current,
+        None,
+        fx=current_scale,
+        fy=current_scale,
+        interpolation=cv2.INTER_AREA,
+    )
+
+    detector = cv2.SIFT_create(nfeatures=12_000)
+    reviewed_keys, reviewed_descriptors = detector.detectAndCompute(reviewed_small, None)
+    current_keys, current_descriptors = detector.detectAndCompute(current_small, None)
+    if reviewed_descriptors is None or current_descriptors is None:
+        fail("The two scans did not contain enough repeatable detail to register.")
+    matches = cv2.BFMatcher().knnMatch(
+        reviewed_descriptors,
+        current_descriptors,
+        k=2,
+    )
+    good = [
+        pair[0]
+        for pair in matches
+        if len(pair) == 2 and pair[0].distance < 0.72 * pair[1].distance
+    ]
+    if len(good) < 100:
+        fail(
+            "The current scan does not match the previously reviewed sheet strongly enough "
+            f"({len(good)} reliable feature matches; at least 100 are required)."
+        )
+    reviewed_points = np.float32(
+        [reviewed_keys[match.queryIdx].pt for match in good]
+    )
+    current_points = np.float32(
+        [current_keys[match.trainIdx].pt for match in good]
+    )
+    small_homography, inlier_mask = cv2.findHomography(
+        reviewed_points,
+        current_points,
+        cv2.RANSAC,
+        3.0,
+    )
+    if small_homography is None or inlier_mask is None:
+        fail("The two scans did not produce a stable registration.")
+    inliers = inlier_mask.reshape(-1).astype(bool)
+    inlier_count = int(np.count_nonzero(inliers))
+    inlier_ratio = inlier_count / len(good)
+    if inlier_count < 100 or inlier_ratio < 0.65:
+        fail(
+            "The current scan does not agree consistently with the previously reviewed "
+            f"sheet ({inlier_count} inliers, {inlier_ratio:.1%} agreement)."
+        )
+
+    reviewed_matrix = np.diag([reviewed_scale, reviewed_scale, 1.0])
+    current_matrix = np.diag([current_scale, current_scale, 1.0])
+    homography = np.linalg.inv(current_matrix) @ small_homography @ reviewed_matrix
+    homography = homography / homography[2, 2]
+    if not np.isfinite(homography).all():
+        fail("The scan registration contained a non-finite transformation.")
+
+    perspective = max(abs(float(homography[2, 0])), abs(float(homography[2, 1])))
+    if perspective * max(reviewed.shape) > 0.01:
+        fail("The scan registration requires perspective warping and is not safe to reuse.")
+    singular_values = np.linalg.svd(homography[:2, :2], compute_uv=False)
+    if (
+        singular_values[1] <= 0
+        or singular_values[0] / singular_values[1] > 1.03
+        or singular_values[0] < 0.9
+        or singular_values[0] > 1.1
+    ):
+        fail("The two scans differ by more than a border shift and slight rotation.")
+
+    reviewed_inliers = reviewed_points[inliers].reshape(1, -1, 2)
+    predicted_small = cv2.perspectiveTransform(
+        reviewed_inliers,
+        small_homography,
+    )[0]
+    residuals = (
+        np.linalg.norm(predicted_small - current_points[inliers], axis=1)
+        / current_scale
+    )
+    median_error = float(np.median(residuals))
+    percentile_95_error = float(np.percentile(residuals, 95))
+    if median_error > 8.0 or percentile_95_error > 20.0:
+        fail(
+            "The scan registration is not precise enough to transfer reviewed corners "
+            f"(median {median_error:.1f}px; 95th percentile {percentile_95_error:.1f}px)."
+        )
+
+    return homography, {
+        "reviewed_size": [int(reviewed.shape[1]), int(reviewed.shape[0])],
+        "current_size": [int(current.shape[1]), int(current.shape[0])],
+        "reliable_matches": len(good),
+        "inlier_count": inlier_count,
+        "inlier_ratio": inlier_ratio,
+        "median_error_pixels": median_error,
+        "percentile_95_error_pixels": percentile_95_error,
+        "homography": homography.tolist(),
+    }
+
+
+def cmd_reuse_reviewed(args: argparse.Namespace) -> int:
+    current_source = args.source.expanduser().resolve()
+    reviewed_source = args.reviewed_source.expanduser().resolve()
+    reviewed_points_path = args.reviewed_points.expanduser().resolve()
+    for path, description in (
+        (current_source, "current source scan"),
+        (reviewed_source, "previously reviewed source scan"),
+        (reviewed_points_path, "previously reviewed point file"),
+    ):
+        if not path.is_file():
+            fail(f"The {description} does not exist: {path}")
+    labels = [str(value).strip() for value in args.label]
+    if len(labels) != 3 or any(not label for label in labels):
+        fail("Exactly three named street intersections are required.")
+    if len({label.casefold() for label in labels}) != 3:
+        fail("The three reviewed street-intersection names must be distinct.")
+
+    target_crs, reviewed_controls = read_points(reviewed_points_path)
+    if target_crs != "EPSG:3857":
+        fail("The previously reviewed points are not in EPSG:3857.")
+    homography, registration = register_reviewed_scan(
+        reviewed_source,
+        current_source,
+    )
+    original_pixels = np.float32(
+        [
+            [
+                [
+                    float(control["source_x"]),
+                    float(control["source_line_gdal"]),
+                ]
+                for control in reviewed_controls
+            ]
+        ]
+    )
+    current_pixels = cv2.perspectiveTransform(original_pixels, homography)[0]
+    current_image = _read_gray(current_source, "current scan")
+    width = int(current_image.shape[1])
+    height = int(current_image.shape[0])
+    controls: list[dict] = []
+    for index, (reviewed, pixel, label) in enumerate(
+        zip(reviewed_controls, current_pixels, labels),
+        start=1,
+    ):
+        source_x = float(pixel[0])
+        source_y = float(pixel[1])
+        if not (0 <= source_x < width and 0 <= source_y < height):
+            fail(
+                f"Transferred corner {index} falls outside the current {width} x {height} scan."
+            )
+        controls.append(
+            {
+                "candidate_id": index,
+                "label": label,
+                "source_x": source_x,
+                "source_y": source_y,
+                "target_x": float(reviewed["map_x"]),
+                "target_y": float(reviewed["map_y"]),
+            }
+        )
+
+    diagnostics = _diagnostics_for_triplet(tuple(controls), width, height)
+    warnings = affine_safety_warnings(diagnostics)
+    if warnings:
+        fail(
+            "The transferred reviewed corners fail the current affine safety checks: "
+            + "; ".join(warnings)
+        )
+    points = args.points.expanduser().resolve()
+    comparison = args.comparison.expanduser().resolve()
+    write_points(points, controls)
+    comparison_record = {
+        "schema_version": 1,
+        "created_utc": utc_now(),
+        "tile": args.tile,
+        "selection_origin": "reviewed-prior-map",
+        "controls": controls,
+        "diagnostics": diagnostics,
+        "safety_warnings": warnings,
+        "registration": registration,
+        "reviewed_source": {
+            "path": str(reviewed_source),
+            "sha256": sha256(reviewed_source),
+        },
+        "reviewed_points": {
+            "path": str(reviewed_points_path),
+            "sha256": sha256(reviewed_points_path),
+        },
+        "current_source": {
+            "path": str(current_source),
+            "sha256": sha256(current_source),
+        },
+        "status": "reviewed-points-transferred-awaiting-packet",
+    }
+    comparison.parent.mkdir(parents=True, exist_ok=True)
+    comparison.write_text(
+        json.dumps(comparison_record, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    print(
+        f"Transferred three previously reviewed corners to tile {args.tile}: "
+        f"{points} ({registration['inlier_count']} matching details; "
+        f"median error {registration['median_error_pixels']:.1f}px)."
+    )
+    return 0
+
+
 def cmd_export(args: argparse.Namespace) -> int:
     proposal_path = args.proposal.expanduser().resolve()
     proposal = json.loads(proposal_path.read_text(encoding="utf-8"))
@@ -787,6 +1040,19 @@ def build_parser() -> argparse.ArgumentParser:
     export.add_argument("--points", required=True, type=Path)
     export.add_argument("--comparison", required=True, type=Path)
     export.set_defaults(function=cmd_export)
+
+    reuse = commands.add_parser(
+        "reuse-reviewed",
+        help="Register a reviewed control file to another scan of the same printed sheet",
+    )
+    reuse.add_argument("--tile", required=True, type=int)
+    reuse.add_argument("--source", required=True, type=Path)
+    reuse.add_argument("--reviewed-source", required=True, type=Path)
+    reuse.add_argument("--reviewed-points", required=True, type=Path)
+    reuse.add_argument("--label", action="append", default=[])
+    reuse.add_argument("--points", required=True, type=Path)
+    reuse.add_argument("--comparison", required=True, type=Path)
+    reuse.set_defaults(function=cmd_reuse_reviewed)
     return parser
 
 

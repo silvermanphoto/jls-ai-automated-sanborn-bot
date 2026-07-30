@@ -6,6 +6,9 @@ import sys
 import tempfile
 import unittest
 
+import cv2
+import numpy as np
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 
 from sanborn_controls import (
@@ -15,6 +18,7 @@ from sanborn_controls import (
     name_core,
     osm_name_catalog,
     rank_triplets,
+    register_reviewed_scan,
     resolve_ocr_names,
     write_points,
 )
@@ -164,6 +168,50 @@ class ControlProposalTests(unittest.TestCase):
             ),
             [],
         )
+
+    def test_reviewed_scan_registration_transfers_pixels_without_copying_them(self):
+        reviewed = np.full((900, 1100), 245, dtype=np.uint8)
+        random = np.random.default_rng(486)
+        for _ in range(350):
+            x = int(random.integers(20, 1080))
+            y = int(random.integers(20, 880))
+            radius = int(random.integers(2, 10))
+            color = int(random.integers(15, 190))
+            cv2.circle(reviewed, (x, y), radius, color, -1)
+        for index in range(12):
+            cv2.putText(
+                reviewed,
+                f"STREET {index}",
+                (40 + (index % 3) * 340, 80 + (index // 3) * 190),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.1,
+                20,
+                2,
+                cv2.LINE_AA,
+            )
+        center = (reviewed.shape[1] / 2, reviewed.shape[0] / 2)
+        affine = cv2.getRotationMatrix2D(center, 0.35, 1.0)
+        affine[:, 2] += (72, 54)
+        current = cv2.warpAffine(
+            reviewed,
+            affine,
+            (1240, 1040),
+            borderValue=255,
+        )
+        reviewed_path = self.folder / "reviewed.png"
+        current_path = self.folder / "current.png"
+        self.assertTrue(cv2.imwrite(str(reviewed_path), reviewed))
+        self.assertTrue(cv2.imwrite(str(current_path), current))
+
+        homography, evidence = register_reviewed_scan(reviewed_path, current_path)
+        tested = np.float32([[[100, 100], [900, 150], [850, 760]]])
+        expected = cv2.transform(tested, affine)
+        actual = cv2.perspectiveTransform(tested, homography)
+        errors = np.linalg.norm(actual[0] - expected[0], axis=1)
+
+        self.assertLess(float(errors.max()), 2.0)
+        self.assertGreater(evidence["inlier_count"], 100)
+        self.assertLess(evidence["median_error_pixels"], 2.0)
 
 
 if __name__ == "__main__":

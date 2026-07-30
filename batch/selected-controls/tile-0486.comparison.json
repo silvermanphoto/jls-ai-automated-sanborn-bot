@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "created_utc": "2026-07-27T08:14:40.770533+00:00",
+  "tile": 486,
+  "selection_origin": "reviewed-prior-map",
+  "controls": [
+    {
+      "candidate_id": 1,
+      "label": "Rawson \u00d7 South Pryor",
+      "source_x": 542.3155517578125,
+      "source_y": 7224.44384765625,
+      "target_x": -9394749.788794577,
+      "target_y": 3994577.224317947
+    },
+    {
+      "candidate_id": 2,
+      "label": "Fulton \u00d7 South Pryor",
+      "source_x": 6027.83447265625,
+      "source_y": 7251.51708984375,
+      "target_x": -9394749.788794577,
+      "target_y": 3994228.236111111
+    },
+    {
+      "candidate_id": 3,
+      "label": "Fulton \u00d7 Pulliam",
+      "source_x": 6048.10791015625,
+      "source_y": 3139.876220703125,
+      "target_x": -9394520.436111111,
+      "target_y": 3994228.236111111
+    }
+  ],
+  "diagnostics": {
+    "matrix": [
+      [
+        0.00027529646456514456,
+        -0.0557799451748906
+      ],
+      [
+        -0.06361835942601601,
+        -0.00031368567317713314
+      ]
+    ],
+    "offset": [
+      -9394346.95901039,
+      3994613.9917481723
+    ],
+    "determinant": -0.0035487149574564684,
+    "unexpected_mirroring": false,
+    "singular_scales": [
+      0.06361913277506705,
+      0.05578062451752318
+    ],
+    "scale_ratio": 1.1405238525983417,
+    "axis_angle_degrees": 89.92572837827569,
+    "source_triangle_area_pixels2": 11277516.325646803,
+    "target_triangle_area_crs2": 40020.69086790085,
+    "source_triangle_coverage": 0.21808793319127429,
+    "source_x_span_fraction": 0.8300606600932364,
+    "source_y_span_fraction": 0.5274039083043388
+  },
+  "safety_warnings": [],
+  "registration": {
+    "reviewed_size": [
+      6473,
+      7656
+    ],
+    "current_size": [
+      6633,
+      7796
+    ],
+    "reliable_matches": 6364,
+    "inlier_count": 6093,
+    "inlier_ratio": 0.957416719044626,
+    "median_error_pixels": 0.2512980103492737,
+    "percentile_95_error_pixels": 1.2654922008514404,
+    "homography": [
+      [
+        0.9999781737379995,
+        -0.004934680541668612,
+        98.94908823398553
+      ],
+      [
+        0.00494068759237903,
+        0.9999732724211974,
+        54.070762251647544
+      ],
+      [
+        7.537389826025038e-10,
+        -6.88525510057291e-10,
+        1.0
+      ]
+    ]
+  },
+  "reviewed_source": {
+    "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/1911 Sanborn Map/! 1911 Sanborn 486 Shmuel Yankel B.tif",
+    "sha256": "9790b6528b3cbd3c732e60b8510d53b99f9644d31810df248c5a8fd2793af4da"
+  },
+  "reviewed_points": {
+    "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/1911 Sanborn Map/! 1911 Sanborn 486 Shmuel Yankel B_cardinal_v2.points",
+    "sha256": "e890494f632a88029e25ed127f011634ec97ffc4914eddb0520ab29a76481021"
+  },
+  "current_source": {
+    "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/1911 SANBORN DOWNLOADS/Sanborn 1911 -- Tile 486.jp2",
+    "sha256": "1ca62455ce10373a04dec9ce33810379791117194ea727e82808f100b64cc6f8"
+  },
+  "status": "reviewed-points-transferred-awaiting-packet"
+}

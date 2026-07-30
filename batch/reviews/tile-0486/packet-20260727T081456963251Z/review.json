@@ -1,0 +1,443 @@
+{
+  "affine_diagnostics": {
+    "axis_angle_degrees": 89.9257283842889,
+    "determinant": -0.003548714957528558,
+    "matrix": [
+      [
+        0.00027529646240509464,
+        -0.055779945177164336
+      ],
+      [
+        -0.06361835942476546,
+        -0.0003136856654464282
+      ]
+    ],
+    "offset": [
+      -9394346.959010353,
+      3994613.9917481313
+    ],
+    "scale_ratio": 1.1405238525289718,
+    "singular_scales": [
+      0.0636191327737785,
+      0.055780624519786125
+    ],
+    "source_triangle_area_pixels2": 11277516.32546123,
+    "source_triangle_coverage": 0.2180879331876856,
+    "source_x_span_fraction": 0.8300606600331675,
+    "source_y_span_fraction": 0.5274039082863008,
+    "target_triangle_area_crs2": 40020.69086790085,
+    "unexpected_mirroring": false
+  },
+  "approval_token": "6cc20d85b83fdc27235bc84b7f7fe98348e8fe1516831c22334b2f94991436ec",
+  "approved": true,
+  "artifacts": {
+    "contact_sheet": {
+      "bytes": 2311181,
+      "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/batch/reviews/tile-0486/packet-20260727T081456963251Z/review-contact-sheet.png",
+      "raster": {
+        "mode": "RGB",
+        "size": [
+          1760,
+          1408
+        ]
+      },
+      "sha256": "f889ae958203488e719ad7c90c259c7be4a933fc8de886aad0b447f117a91644"
+    },
+    "georeferenced_preview": {
+      "bytes": 7630209,
+      "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/batch/reviews/tile-0486/packet-20260727T081456963251Z/georeferenced-preview.tif",
+      "raster": {
+        "bands": [
+          "Red",
+          "Green",
+          "Blue",
+          "Alpha"
+        ],
+        "crs_wkt": "PROJCRS[\"WGS 84 / Pseudo-Mercator\",\n    BASEGEOGCRS[\"WGS 84\",\n        ENSEMBLE[\"World Geodetic System 1984 ensemble\",\n            MEMBER[\"World Geodetic System 1984 (Transit)\"],\n            MEMBER[\"World Geodetic System 1984 (G730)\"],\n            MEMBER[\"World Geodetic System 1984 (G873)\"],\n            MEMBER[\"World Geodetic System 1984 (G1150)\"],\n            MEMBER[\"World Geodetic System 1984 (G1674)\"],\n            MEMBER[\"World Geodetic System 1984 (G1762)\"],\n            MEMBER[\"World Geodetic System 1984 (G2139)\"],\n            MEMBER[\"World Geodetic System 1984 (G2296)\"],\n            ELLIPSOID[\"WGS 84\",6378137,298.257223563,\n                LENGTHUNIT[\"metre\",1]],\n            ENSEMBLEACCURACY[2.0]],\n        PRIMEM[\"Greenwich\",0,\n            ANGLEUNIT[\"degree\",0.0174532925199433]],\n        ID[\"EPSG\",4326]],\n    CONVERSION[\"Popular Visualisation Pseudo-Mercator\",\n        METHOD[\"Popular Visualisation Pseudo Mercator\",\n            ID[\"EPSG\",1024]],\n        PARAMETER[\"Latitude of natural origin\",0,\n            ANGLEUNIT[\"degree\",0.0174532925199433],\n            ID[\"EPSG\",8801]],\n        PARAMETER[\"Longitude of natural origin\",0,\n            ANGLEUNIT[\"degree\",0.0174532925199433],\n            ID[\"EPSG\",8802]],\n        PARAMETER[\"False easting\",0,\n            LENGTHUNIT[\"metre\",1],\n            ID[\"EPSG\",8806]],\n        PARAMETER[\"False northing\",0,\n            LENGTHUNIT[\"metre\",1],\n            ID[\"EPSG\",8807]]],\n    CS[Cartesian,2],\n        AXIS[\"easting (X)\",east,\n            ORDER[1],\n            LENGTHUNIT[\"metre\",1]],\n        AXIS[\"northing (Y)\",north,\n            ORDER[2],\n            LENGTHUNIT[\"metre\",1]],\n    USAGE[\n        SCOPE[\"Web mapping and visualisation.\"],\n        AREA[\"World between 85.06\u00b0S and 85.06\u00b0N.\"],\n        BBOX[-85.06,-180,85.06,180]],\n    ID[\"EPSG\",3857]]",
+        "geo_transform": [
+          -9394781.819466222,
+          0.3119255094669227,
+          0.0,
+          3994613.9917472275,
+          0.0,
+          -0.3119255094669227
+        ],
+        "size": [
+          1400,
+          1361
+        ]
+      },
+      "sha256": "55b76d9a4f2d42608e5ccbe45415dcabd793eb01dbba5f0d1d71753ab9b41eff"
+    },
+    "kauffman_overlay": {
+      "bytes": 2574330,
+      "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/batch/reviews/tile-0486/packet-20260727T081456963251Z/kauffman-overlay.png",
+      "raster": {
+        "mode": "RGBA",
+        "size": [
+          1400,
+          1361
+        ]
+      },
+      "sha256": "521ac3169ad99b32f131157d6b76993167a151813c9a8b93936ea38659c11248"
+    },
+    "kauffman_reprojected": {
+      "bytes": 7630157,
+      "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/batch/reviews/tile-0486/packet-20260727T081456963251Z/kauffman-reprojected.tif",
+      "raster": {
+        "bands": [
+          "Red",
+          "Green",
+          "Blue",
+          "Alpha"
+        ],
+        "crs_wkt": "PROJCRS[\"WGS 84 / Pseudo-Mercator\",\n    BASEGEOGCRS[\"WGS 84\",\n        ENSEMBLE[\"World Geodetic System 1984 ensemble\",\n            MEMBER[\"World Geodetic System 1984 (Transit)\"],\n            MEMBER[\"World Geodetic System 1984 (G730)\"],\n            MEMBER[\"World Geodetic System 1984 (G873)\"],\n            MEMBER[\"World Geodetic System 1984 (G1150)\"],\n            MEMBER[\"World Geodetic System 1984 (G1674)\"],\n            MEMBER[\"World Geodetic System 1984 (G1762)\"],\n            MEMBER[\"World Geodetic System 1984 (G2139)\"],\n            MEMBER[\"World Geodetic System 1984 (G2296)\"],\n            ELLIPSOID[\"WGS 84\",6378137,298.257223563,\n                LENGTHUNIT[\"metre\",1]],\n            ENSEMBLEACCURACY[2.0]],\n        PRIMEM[\"Greenwich\",0,\n            ANGLEUNIT[\"degree\",0.0174532925199433]],\n        ID[\"EPSG\",4326]],\n    CONVERSION[\"Popular Visualisation Pseudo-Mercator\",\n        METHOD[\"Popular Visualisation Pseudo Mercator\",\n            ID[\"EPSG\",1024]],\n        PARAMETER[\"Latitude of natural origin\",0,\n            ANGLEUNIT[\"degree\",0.0174532925199433],\n            ID[\"EPSG\",8801]],\n        PARAMETER[\"Longitude of natural origin\",0,\n            ANGLEUNIT[\"degree\",0.0174532925199433],\n            ID[\"EPSG\",8802]],\n        PARAMETER[\"False easting\",0,\n            LENGTHUNIT[\"metre\",1],\n            ID[\"EPSG\",8806]],\n        PARAMETER[\"False northing\",0,\n            LENGTHUNIT[\"metre\",1],\n            ID[\"EPSG\",8807]]],\n    CS[Cartesian,2],\n        AXIS[\"easting (X)\",east,\n            ORDER[1],\n            LENGTHUNIT[\"metre\",1]],\n        AXIS[\"northing (Y)\",north,\n            ORDER[2],\n            LENGTHUNIT[\"metre\",1]],\n    USAGE[\n        SCOPE[\"Web mapping and visualisation.\"],\n        AREA[\"World between 85.06\u00b0S and 85.06\u00b0N.\"],\n        BBOX[-85.06,-180,85.06,180]],\n    ID[\"EPSG\",3857]]",
+        "geo_transform": [
+          -9394781.819466222,
+          0.3119255094669227,
+          0.0,
+          3994613.9917472275,
+          0.0,
+          -0.3119255094669217
+        ],
+        "size": [
+          1400,
+          1361
+        ]
+      },
+      "sha256": "e2a85f4bdfb92f98f85c0a24198cddd0c2560164570a7716384fe162b2d0f35b"
+    },
+    "osm_overlay": {
+      "bytes": 2675276,
+      "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/batch/reviews/tile-0486/packet-20260727T081456963251Z/osm-overlay.png",
+      "raster": {
+        "mode": "RGBA",
+        "size": [
+          1400,
+          1361
+        ]
+      },
+      "sha256": "2511dfc309d5bd21dbed5311a9a8939caa0a2572a1bca30a1901749fb9ddd448"
+    },
+    "osm_roads": {
+      "bytes": 22004,
+      "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/batch/reviews/tile-0486/packet-20260727T081456963251Z/osm-roads.png",
+      "raster": {
+        "mode": "RGBA",
+        "size": [
+          1400,
+          1361
+        ]
+      },
+      "sha256": "e5c369c375ac274de37a1b4f7c633f1d06255edd2f34bf45af3eb5c2f8f48de5"
+    },
+    "source_crosshairs": {
+      "bytes": 3852434,
+      "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/batch/reviews/tile-0486/packet-20260727T081456963251Z/source-crosshairs.png",
+      "raster": {
+        "mode": "RGB",
+        "size": [
+          1600,
+          1881
+        ]
+      },
+      "sha256": "d314cea99d9003d782630ada2e58d0037890530163e0287b55bb7cd8a6f8eb48"
+    },
+    "source_preview": {
+      "bytes": 3851003,
+      "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/batch/reviews/tile-0486/packet-20260727T081456963251Z/source-preview.png",
+      "raster": {
+        "mode": "RGB",
+        "size": [
+          1600,
+          1881
+        ]
+      },
+      "sha256": "6e5c691e017de1d4d665930ab2bf960fb056622724d55471817feebd8213c081"
+    }
+  },
+  "created_utc": "2026-07-27T08:15:01.856640+00:00",
+  "local_geographic_verification": {
+    "instructions": "Inspect review-contact-sheet.png at full size. Confirm the three source crosshairs name the intended intersections and that the transformed street grid agrees with both the blue OSM roads and the 1921 Kauffman overlay.",
+    "method": "local-osm-and-kauffman-packet",
+    "network_required": false,
+    "qgis_required": false
+  },
+  "points": {
+    "bytes": 276,
+    "controls": [
+      {
+        "label": "Rawson \u00d7 South Pryor",
+        "map_x": -9394749.788794577,
+        "map_y": 3994577.224317947,
+        "source_line_gdal": 7224.443848,
+        "source_x": 542.315552,
+        "source_y_qgis": -7224.443848
+      },
+      {
+        "label": "Fulton \u00d7 South Pryor",
+        "map_x": -9394749.788794577,
+        "map_y": 3994228.236111111,
+        "source_line_gdal": 7251.51709,
+        "source_x": 6027.834473,
+        "source_y_qgis": -7251.51709
+      },
+      {
+        "label": "Fulton \u00d7 Pulliam",
+        "map_x": -9394520.436111111,
+        "map_y": 3994228.236111111,
+        "source_line_gdal": 3139.876221,
+        "source_x": 6048.10791,
+        "source_y_qgis": -3139.876221
+      }
+    ],
+    "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/batch/reviews/tile-0486/packet-20260727T081456963251Z/approved-controls.points",
+    "sha256": "7d050ed756133f2e9fdc36191cf7dcd1812d082f1c5f13824d7f7002ea8e135e",
+    "target_crs": "EPSG:3857"
+  },
+  "provenance": {
+    "font": {
+      "bytes": 750984,
+      "path": "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+      "sha256": "d72db21f9242aedd6b917d8549ad5921766b24d5f8d0becfda2ff4c620b3c2e0"
+    },
+    "kauffman_map": {
+      "bytes": 997386882,
+      "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/Stage 1 -Orthorectified Atlanta Maps to print/1921 Atlanta Kauffman Map_modified.tif",
+      "sha256": "7c8b972eb6874b9dafd8379c3fdfcd41f84eb1525ca0b0ab54dc79fc15ca691b"
+    },
+    "kauffman_raster": {
+      "bands": [
+        "Red",
+        "Green",
+        "Blue"
+      ],
+      "crs_wkt": "GEOGCRS[\"WGS 84\",\n    ENSEMBLE[\"World Geodetic System 1984 ensemble\",\n        MEMBER[\"World Geodetic System 1984 (Transit)\"],\n        MEMBER[\"World Geodetic System 1984 (G730)\"],\n        MEMBER[\"World Geodetic System 1984 (G873)\"],\n        MEMBER[\"World Geodetic System 1984 (G1150)\"],\n        MEMBER[\"World Geodetic System 1984 (G1674)\"],\n        MEMBER[\"World Geodetic System 1984 (G1762)\"],\n        MEMBER[\"World Geodetic System 1984 (G2139)\"],\n        MEMBER[\"World Geodetic System 1984 (G2296)\"],\n        ELLIPSOID[\"WGS 84\",6378137,298.257223563,\n            LENGTHUNIT[\"metre\",1]],\n        ENSEMBLEACCURACY[2.0]],\n    PRIMEM[\"Greenwich\",0,\n        ANGLEUNIT[\"degree\",0.0174532925199433]],\n    CS[ellipsoidal,2],\n        AXIS[\"geodetic latitude (Lat)\",north,\n            ORDER[1],\n            ANGLEUNIT[\"degree\",0.0174532925199433]],\n        AXIS[\"geodetic longitude (Lon)\",east,\n            ORDER[2],\n            ANGLEUNIT[\"degree\",0.0174532925199433]],\n    USAGE[\n        SCOPE[\"Horizontal component of 3D system.\"],\n        AREA[\"World.\"],\n        BBOX[-90,-180,90,180]],\n    ID[\"EPSG\",4326]]",
+      "geo_transform": [
+        -84.45348850614971,
+        9.093128378e-06,
+        0.0,
+        33.85082299213133,
+        0.0,
+        -9.093128378e-06
+      ],
+      "size": [
+        19035,
+        17464
+      ]
+    },
+    "osm_database": {
+      "bytes": 41689088,
+      "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/batch/osm/atlanta-streets.sqlite3",
+      "sha256": "a2d7cbd8469ff76a9d403d8cec65d8265595b159a058e93d85dd03c5a3c3a88a"
+    },
+    "osm_metadata": {
+      "bbox": [
+        33.6,
+        -84.55,
+        33.9,
+        -84.25
+      ],
+      "downloaded_utc": "2026-07-15T12:03:57.008426+00:00",
+      "intersection_node_count": 21434,
+      "intersection_pair_count": 30179,
+      "named_way_name_count": 51123,
+      "node_count": 235248,
+      "query": "[out:xml][timeout:180];\n(\n  way[\"highway\"][\"name\"](33.60000000,-84.55000000,33.90000000,-84.25000000);\n  way[\"highway\"][\"alt_name\"](33.60000000,-84.55000000,33.90000000,-84.25000000);\n  way[\"highway\"][\"old_name\"](33.60000000,-84.55000000,33.90000000,-84.25000000);\n  way[\"highway\"][\"official_name\"](33.60000000,-84.55000000,33.90000000,-84.25000000);\n  way[\"highway\"][\"short_name\"](33.60000000,-84.55000000,33.90000000,-84.25000000);\n  way[\"highway\"][\"loc_name\"](33.60000000,-84.55000000,33.90000000,-84.25000000);\n  way[\"highway\"][\"name:en\"](33.60000000,-84.55000000,33.90000000,-84.25000000);\n);\n(._;>;);\nout body qt;\n",
+      "refreshed_utc": "2026-07-15T12:03:59.625193+00:00",
+      "schema_version": 1,
+      "source_bytes": 38257166,
+      "source_kind": "overpass",
+      "source_path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/batch/osm/atlanta-streets.osm",
+      "source_sha256": "cfe47c5fc285d2ecdb0b4df81aae9c1e391c36aabca2db2d2aed954ed66bb42d",
+      "source_url": "https://overpass-api.de/api/interpreter",
+      "way_count": 31918
+    },
+    "renderer_code": {
+      "sanborn_osm": {
+        "bytes": 35569,
+        "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/tools/sanborn_osm.py",
+        "sha256": "80fb9f7b9148f907617124465922845d1f0ed3b49a1cb53dc6ab0afb3ceaa7f0"
+      },
+      "sanborn_review": {
+        "bytes": 43985,
+        "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/tools/sanborn_review.py",
+        "sha256": "0e7bed3a0a1c7521b02ff269b3c54f7923850288836752c65bae6f3a40d46ef5"
+      }
+    },
+    "software": {
+      "gdal": "GDAL 3.13.1 \"Iowa City\", released 2026/06/01",
+      "pillow": "12.0.0",
+      "python": "3.12.0"
+    }
+  },
+  "render_spec": {
+    "affine_preview": {
+      "order": 1,
+      "resampling": "cubic"
+    },
+    "kauffman": {
+      "coverage_fraction": 1.0,
+      "resampling": "cubic",
+      "sanborn_blend_fraction": 0.45
+    },
+    "map_preview_size": [
+      1400,
+      1361
+    ],
+    "osm": {
+      "casing_rgba": [
+        255,
+        255,
+        255,
+        225
+      ],
+      "color_rgba": [
+        0,
+        84,
+        255,
+        225
+      ],
+      "query_padding_fraction": 0.15,
+      "vertex_count": 256,
+      "way_count": 33,
+      "way_ids": [
+        9255863,
+        9269268,
+        9270616,
+        9274330,
+        9275557,
+        9275834,
+        28685125,
+        28688727,
+        38964644,
+        39160299,
+        39160305,
+        39160306,
+        39160883,
+        39160904,
+        68634436,
+        119686422,
+        307098112,
+        307098115,
+        316454371,
+        436836583,
+        441553518,
+        541312725,
+        561774333,
+        604430152,
+        630778918,
+        630779031,
+        942362243,
+        942362244,
+        1012740769,
+        1111405818,
+        1111405819,
+        1135695874,
+        1414637528
+      ]
+    },
+    "source_preview_width": 1600,
+    "target_crs": "EPSG:3857",
+    "target_extent": [
+      -9394781.819466222,
+      3994189.461128843,
+      -9394345.123752968,
+      3994613.9917472275
+    ]
+  },
+  "required_artifacts": [
+    "source_preview",
+    "source_crosshairs",
+    "georeferenced_preview",
+    "osm_roads",
+    "osm_overlay",
+    "kauffman_reprojected",
+    "kauffman_overlay",
+    "contact_sheet"
+  ],
+  "safety_limits": {
+    "allow_distortion": false,
+    "axis_angle_degrees": [
+      85.0,
+      95.0
+    ],
+    "distortion_note": "",
+    "distortion_warnings": [],
+    "expected_crs": "EPSG:3857",
+    "max_scale_ratio": 1.15,
+    "min_triangle_coverage": 0.02,
+    "min_x_span_fraction": 0.2,
+    "min_y_span_fraction": 0.2,
+    "target_seed_context": {
+      "map_x": -9394513.64560899,
+      "map_y": 3994415.4665339743,
+      "provenance": {
+        "created_utc": "2026-07-15T12:05:03.665915+00:00",
+        "index": {
+          "crs": "EPSG:3857",
+          "geotransform": [
+            -9399547.174233677,
+            1.7959458851421064,
+            0.0,
+            4003031.8490759972,
+            0.0,
+            -1.7959458851421064
+          ],
+          "height": 8089,
+          "mtime_ns": 1784083988327946037,
+          "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/Stage 1 -Orthorectified Atlanta Maps to print/1911 Sanborn Index Orthorectified_OSM_9point_finetuned_2026-07-14.tif",
+          "sha256": "af98b5ea9139e8a89f718f4aeb08df2461c5dea25c1b46e475c951b3aede122f",
+          "size": 77999535,
+          "width": 6517
+        },
+        "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/batch/index/tile-location-seeds.json",
+        "purpose": "approximate wrong-neighborhood safeguard; never final controls",
+        "recognizer": "Apple Vision accurate local OCR with overlapping crops",
+        "schema_version": 1,
+        "sha256": "074e9c8eed4bc20fc2c4073f27c32ea7854a53a32a7b88843e08170b26d72e27"
+      },
+      "quality": "high",
+      "review_required": false,
+      "seed": {
+        "alternatives": [
+          {
+            "detection_count": 4,
+            "exact_digit_reads": 3,
+            "mean_confidence": 1.0,
+            "preview_x": 1290.1875000223213,
+            "preview_y": 2208.7499999217857,
+            "score": 20.5,
+            "support": 4,
+            "vision_texts": [
+              "486",
+              "L486"
+            ]
+          }
+        ],
+        "ambiguous": false,
+        "crs": "EPSG:3857",
+        "map_x": -9394513.64560899,
+        "map_y": 3994415.4665339743,
+        "mean_confidence": 1.0,
+        "preview_x": 1290.1875000223213,
+        "preview_y": 2208.7499999217857,
+        "quality": "high",
+        "suggested_max_distance": 250.0,
+        "support": 4,
+        "tile": 486
+      },
+      "status": "selected",
+      "suggested_max_distance": 250.0,
+      "tile": 486
+    }
+  },
+  "schema_version": 3,
+  "source": {
+    "bytes": 9222078,
+    "height": 7796,
+    "path": "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/AI AUTOMATED SANBORN BOT/1911 SANBORN DOWNLOADS/Sanborn 1911 -- Tile 486.jp2",
+    "sha256": "1ca62455ce10373a04dec9ce33810379791117194ea727e82808f100b64cc6f8",
+    "width": 6633
+  }
+}

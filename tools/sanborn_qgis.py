@@ -1197,6 +1197,18 @@ def prepare_sanborn_layers():
                 project.crs().authid(), PLAN["expected_project_crs"]
             )
         )
+    # The dated archive is a copy of the project file on disk. If the open
+    # project holds edits that have not been saved, that copy is not the thing
+    # about to be changed, and the way back it promises does not exist. Stop
+    # before touching anything and say so plainly.
+    if project.isDirty():
+        _sanborn_fail(
+            "Your QGIS project has changes you have not saved yet. The dated "
+            "backup copies the project file on disk, so it would not include "
+            "them, and it could not put things back the way they are now. "
+            "Save the project in QGIS, then run this again."
+        )
+
     project_mtime = os.stat(protected_project).st_mtime_ns
     root = project.layerTreeRoot()
     index_node = _sanborn_exact_index(root)

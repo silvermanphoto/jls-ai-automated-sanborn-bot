@@ -22,6 +22,21 @@ Use the master instruction manual in this folder as the operating source of trut
 
 ## Lessons learned
 
+### 2026-07-26 — Version 1.15, reviewed-control scan registration
+
+- A previously reviewed `.points` file is geographic evidence, but its source
+  pixels belong to one particular scan. The new reuse path registers the old
+  and current scans from hundreds of local image features, transfers the three
+  pixels through that measured transformation, and records both source hashes,
+  the transformation, inlier count, agreement rate, and pixel residuals.
+- Never copy reviewed pixel coordinates to a differently sized derivative.
+  Reuse is allowed only when the two images behave like the same printed sheet
+  with a border shift, slight rotation, and nearly uniform scale; perspective,
+  weak feature agreement, large residuals, or a failed affine gate stop the
+  transfer.
+- Reused controls retain their three historic intersection names and still
+  stop before a new OSM/Kauffman packet. Prior review is not current approval.
+
 ### 2026-07-26 — Version 1.14, the packet repair
 
 - The packet step failed on every run from the day the batch engine shipped. `cmd_packet` created the packet folder, copied `approved-controls.points` into it, then called `sanborn_review.py create --review-dir` against that same folder — and that generator refuses a folder holding anything unless `--replace` is passed. Nothing was ever drawn, so no sheet reached approval or a final map. When one step both prepares a folder and hands it to another tool, check that tool's expectations about the folder being empty.
