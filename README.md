@@ -4,10 +4,8 @@ Downloads the 1911 Atlanta Sanborn fire insurance maps from the Library of Congr
 out where each sheet belongs on the ground, and prepares it as a georeferenced layer for
 QGIS. Current system version: **1.16**.
 
-Atlanta's 1911 Sanborn sheets have been scanned and publicly readable for years without being
-georeferenced, so using one still meant holding a picture of a map beside a real map. Placing a
-sheet by hand takes an afternoon. This repository holds a local system that does the placement
-automatically and stops at the points where a person has to look.
+Historic Sanborn maps have been scanned and publicly readable for years without being
+georeferenced, so until GIS tools came along, historical study meant holding a picture of a map beside a real map. Even with GIS georeferencing, pinning an old map to a current map accurately takes hours per map.This repository holds a local system that automates the placement of Sanborns for Atlanta.
 
 ![Three adjoining 1911 Sanborn sheets positioned over present-day aerial imagery of Summerhill](docs/images/summerhill-sheets-over-the-connector.jpg)
 
@@ -23,8 +21,7 @@ erased, and what survives of the grid is thin and moved.
 ![1911 building footprints drawn over the Downtown Connector, with the Beth Israel Synagogue footprint under the lanes](docs/images/summerhill-footprints-detail.jpg)
 
 The same ground in detail. The 1911 footprints sit over lanes that did not exist when the sheet
-was drawn. The outlined masonry building carries the sheet's own printed label, BETH ISRAEL
-SYNAGOGUE, on a lot now under pavement.
+was drawn.
 
 Four things let a sheet land anyway:
 
