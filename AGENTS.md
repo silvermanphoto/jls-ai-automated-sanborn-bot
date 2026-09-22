@@ -22,6 +22,22 @@ Use the master instruction manual in this folder as the operating source of trut
 
 ## Lessons learned
 
+### 2026-09-22 — Version 1.16, `doctor` does not prove a tool runs
+
+- `doctor` reports GDAL healthy when `gdal_translate`, `gdalwarp`, `gdalinfo`, and
+  `gdal_edit.py` are present on PATH. It never runs one. On this date every GDAL
+  command aborted at launch because Homebrew `libheif` is linked against
+  `libx265.216.dylib` while the `x265` symlink points at 4.3, which ships `.217`.
+  `brew reinstall libheif` relinks it. A future `doctor` should execute one
+  trivial GDAL command and report the loader error, because a toolchain that
+  installs but cannot run looks identical to a working one in the current report.
+- Homebrew's Python 3.14 has a broken `pyexpat` symbol and cannot parse XML, which
+  fails every OSM path. Python 3.13 runs the suite. The suite is 122 tests; the 14
+  failures seen on this date come from these two Homebrew faults, not from this code.
+- The README is now written for readers outside this project. Keep the operating
+  detail accurate there, and keep claims about the test suite attributed to the
+  version and date they were measured.
+
 ### 2026-07-26 — Version 1.15, reviewed-control scan registration
 
 - A previously reviewed `.points` file is geographic evidence, but its source
