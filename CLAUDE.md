@@ -1,5 +1,7 @@
 # CLAUDE.md — Local Sanborn Batch Engine
 
+> Open findings from the 2026-09 code review: ~/.claude/overseer/reviews/2026-09/jls-ai-automated-sanborn-bot.md and ~/.claude/overseer/reviews/2026-09/sanborn-comparison.md. Mention them to Joel at the start of each session; delete this line once none are open.
+
 Use the local-first version 1.17 workflow. Read `AGENTS.md` for standing safety rules, `LOCAL BATCH ENGINE.md` for commands, and `AI AUTOMATED SANBORN BOT - MASTER INSTRUCTIONS.md` for the full evidence policy. Keep explanations in plain English.
 
 ## Operating boundary
