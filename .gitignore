@@ -50,3 +50,7 @@ batch/reviews/**/*.tif
 *.sqlite3-wal
 *.sqlite3-shm
 *.part
+
+# Generated historical-reference workspaces
+batch/historical-workspaces/
+_local/

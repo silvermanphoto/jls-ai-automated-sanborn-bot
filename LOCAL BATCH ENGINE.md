@@ -245,7 +245,7 @@ The QGIS result must be:
 - root-level folder `1911 ATLANTA SANBORNS` immediately below that index, with the index outside it;
 - exactly one layer node for each finished raster, in ascending printed tile-number order;
 - folder expanded and every raster row collapsed, hiding the Red, Green, and Blue legend rows;
-- Brightness +50, Gamma 1.2, Contrast +20, global opacity 100%, and band 4 as alpha;
+- Brightness 0, Gamma 1.0, Contrast 0 (no channel stretch), global opacity 100%, and band 4 as alpha;
 - protected project file unchanged and no project-save call.
 
 The helper is safe to run again for the same manifest. Before its first mutation, it scans the whole project registry and layer tree for any same-number raster pointing to a different source path. It reuses the intended raster by canonical path and verifies that no duplicate registry or tree entry remains. When repositioning an existing group, it inserts a clone before removing the old tree node so QGIS cannot unregister the group's live raster layers. It snapshots existing nodes and renderer values; if a later step fails, it removes newly registered layers and restores prior group, node, name, and style state. The generated code never saves the project.
@@ -293,3 +293,5 @@ The final staged suite passes **122 tests in 26.9 seconds**, including a real GD
 
 - On the real Tile 154 scan, Apple Vision passed the exact printed-title gate. First-run OCR including native helper compilation was about 17 seconds; an earlier warm spatial-OCR run was 4.8 seconds. The 250-meter proposal placed Auburn × Butler, Auburn × Fort, and Houston/Dobbs × Butler at rank 0 in about 10 seconds. The tightened final warp completed in about 5 seconds at 6587 × 7845 RGBA, SHA-256 `6b3162c42e1d414b9d0ca8213352bd33b6436baecc3576f4c028fa4402aacc6c`, band checksums `23168 / 61645 / 40864 / 26750`, with the protected project unchanged. Its existing local packet was visually inspected.
 - Real Tile 474 exercised packet creation and approval with the documented distortion exception. The hash-locked warnings were scale ratio `1.3393` and axis angle `98.500°`; the packet used a written note, 67 OSM ways, and the Kauffman crop. Its 250-meter-envelope warp completed in about 5.5 seconds at 7735 × 9239 RGBA, SHA-256 `f1de82562647d0ecb27b1815da9c8056329b084565e0747c6c8b82b5e7852083`, band checksums `55125 / 14515 / 65108 / 51289`, with the protected project unchanged.
+
+2026-09-25 appearance correction: preserve the original TIFF appearance. Brightness and contrast stay at 0, gamma at 1, opacity at 100%, alpha band 4, and RGB channel stretching is disabled. This supersedes every earlier enhanced-display preset; it does not alter the source pixels.

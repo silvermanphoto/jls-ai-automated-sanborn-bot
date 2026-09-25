@@ -1,6 +1,6 @@
 # CLAUDE.md — Local Sanborn Batch Engine
 
-Use the local-first version 1.16 workflow. Read `AGENTS.md` for standing safety rules, `LOCAL BATCH ENGINE.md` for commands, and `AI AUTOMATED SANBORN BOT - MASTER INSTRUCTIONS.md` for the full evidence policy. Keep explanations in plain English.
+Use the local-first version 1.17 workflow. Read `AGENTS.md` for standing safety rules, `LOCAL BATCH ENGINE.md` for commands, and `AI AUTOMATED SANBORN BOT - MASTER INSTRUCTIONS.md` for the full evidence policy. Keep explanations in plain English.
 
 ## Operating boundary
 
@@ -27,7 +27,8 @@ Reviewer and note are mandatory. `--replace-existing` deliberately supersedes an
 
 ## Controls and review packets
 
-- Use exactly three strong, distant, non-collinear controls by default. OSM is modern ground truth; Kauffman is the required historical cross-check.
+- Use exactly three strong, distant, non-collinear controls by default. Use OSM only where street identity and geometry survive. The 1958 original topo is primary for historic streets within drawn coverage; its street-adjustment companion is supporting context only. Kauffman remains the supporting historical view in the legacy packet.
+- Historical controls require at least three separate, spatially distributed check crossings. Each sheet gets its own affine fit; never transfer sheet 486 percentages. The old cardinal-v2 placements for 486/493/494 and the prior487 result are superseded, while source scans and the manual workflow remain preserved.
 - A distortion exception during `sanborn_controls.py export` can waive only scale-ratio or axis-angle warnings. It cannot waive mirroring, inadequate geometry, wrong CRS, wrong neighborhood, seed-envelope failure, or an out-of-bounds control. The flag requires a nonblank note and an actual eligible warning.
 - Export approval does not carry automatically into packet creation. Repeat `--allow-distortion` and the evidence note on `sanborn_batch.py packet`.
 - Every review attempt gets a new `batch/reviews/tile-NNNN/packet-TIMESTAMP/` folder with an `approved-controls.points` copy. Never edit or reuse an older packet.
@@ -42,7 +43,9 @@ Reviewer and note are mandatory. `--replace-existing` deliberately supersedes an
 - Process-local, stat-aware hash caching may avoid rereading unchanged shared evidence. Any canonical-path, device, inode, size, modification-time, or change-time difference forces a new hash; a mid-read change stops the run.
 - A schema-3 QGIS manifest binds the raster, ledger, source, immutable controls, review and approval records, all eight packet artifacts, OSM and Kauffman inputs, renderer/font inputs, and seed provenance.
 - The exact root-level index remains outside `1911 ATLANTA SANBORNS`. Keep that group immediately below the index, expanded, with tiles in printed-number order and every raster child collapsed so RGB legend rows stay closed.
-- Every completed raster uses opacity 1.0, Brightness +50, Gamma 1.2, Contrast +20, and alpha band 4. Generated QGIS code must perform duplicate preflight and rollback and must contain no project-save call.
+- Every completed raster uses opacity 1.0, Brightness 0, Gamma 1.0, Contrast 0 (no channel stretch), and alpha band 4. Generated QGIS code must perform duplicate preflight and rollback and must contain no project-save call.
 - Earlier live Tile 236 evidence used an equivalent hash-bound plan, not a live schema-3 manifest. The present schema-3 revision was exercised in the installed QGIS 3.42.1 runtime with the real index and synthetic tiles; the unavailable QGIS MCP connection prevented a current run against Joel's open protected project. Keep those claims separate.
 
-The final staged suite passes 122 tests in 26.9 seconds, including a real GDAL warp whose embedded provenance passed batch resume verification.
+Version 1.17 passes all 158 engine tests with the working QGIS GDAL family, including real warping and embedded-provenance resume checks. When using QGIS GDAL, set PROJ_LIB and PROJ_DATA to its Contents/Resources/proj folder and GDAL_DATA to Contents/Resources/gdal.
+
+2026-09-25 appearance correction: preserve the original TIFF appearance. Brightness and contrast stay at 0, gamma at 1, opacity at 100%, alpha band 4, and RGB channel stretching is disabled. This supersedes every earlier enhanced-display preset; it does not alter the source pixels.

@@ -404,7 +404,7 @@ def load_manifest(path: Path) -> dict[str, Any]:
     artifact_sha256 = verification.get("artifact_sha256")
     if (
         not isinstance(artifact_sha256, dict)
-        or set(artifact_sha256) != set(REQUIRED_ARTIFACTS)
+        or not set(REQUIRED_ARTIFACTS).issubset(artifact_sha256)
         or any(
             not isinstance(key, str)
             or not key
@@ -415,7 +415,7 @@ def load_manifest(path: Path) -> dict[str, Any]:
     ):
         _fail(
             f"{manifest}: geographic verification must hash exactly the eight "
-            "required review artifacts"
+            "required review artifacts and every additional historical view"
         )
 
     target_seed = record.get("target_seed")
@@ -465,6 +465,12 @@ def load_manifest(path: Path) -> dict[str, Any]:
         additional_evidence.append(
             _verified_evidence_file(review_provenance.get(key), manifest, label)
         )
+    for key in ("historical_evidence", "historical_reference", "historical_measurement_preview"):
+        if key in review_provenance:
+            additional_evidence.append(_verified_evidence_file(review_provenance[key], manifest, key))
+    for key, artifact in approved_review.get("artifacts", {}).items():
+        if key not in REQUIRED_ARTIFACTS:
+            additional_evidence.append(_verified_evidence_file(artifact, manifest, key))
     renderer_code = review_provenance.get("renderer_code")
     if not isinstance(renderer_code, dict) or not renderer_code:
         _fail(f"{manifest}: approved review lacks renderer-code provenance")
@@ -660,6 +666,8 @@ from qgis.core import (
     QgsLayerTreeLayer,
     QgsProject,
     QgsRasterLayer,
+    QgsMultiBandColorRenderer,
+    QgsContrastEnhancement,
 )
 
 _SANBORN_HASH_CACHE = {}
@@ -1035,6 +1043,7 @@ def _sanborn_snapshot_rollback(root, existing_group, prepared):
             "contrast": brightness.contrast(),
             "opacity": renderer.opacity(),
             "alpha_band": renderer.alphaBand(),
+            "renderer_clone": renderer.clone(),
             "external_nodes": external_nodes,
         }
     return {
@@ -1120,6 +1129,7 @@ def _sanborn_restore_after_failure(project, root, rollback):
             brightness.setBrightness(snapshot["brightness"])
             brightness.setGamma(snapshot["gamma"])
             brightness.setContrast(snapshot["contrast"])
+            layer.setRenderer(snapshot["renderer_clone"].clone())
             renderer = layer.renderer()
             renderer.setOpacity(snapshot["opacity"])
             renderer.setAlphaBand(snapshot["alpha_band"])
@@ -1130,6 +1140,13 @@ def _sanborn_restore_after_failure(project, root, rollback):
 
 
 def _sanborn_apply_style(layer):
+    # A fresh RGB renderer avoids QGIS's automatic per-channel stretch. Keep
+    # source pixel appearance intact; this is display setup, not image editing.
+    renderer = QgsMultiBandColorRenderer(layer.dataProvider(), 1, 2, 3)
+    renderer.setRedContrastEnhancement(None)
+    renderer.setGreenContrastEnhancement(None)
+    renderer.setBlueContrastEnhancement(None)
+    layer.setRenderer(renderer)
     brightness = layer.brightnessFilter()
     brightness.setBrightness(int(PLAN["style"]["brightness"]))
     brightness.setGamma(float(PLAN["style"]["gamma"]))
@@ -1165,6 +1182,11 @@ def _sanborn_verify_style(layer):
     brightness = layer.brightnessFilter()
     renderer = layer.renderer()
     expected = PLAN["style"]
+    if not isinstance(renderer, QgsMultiBandColorRenderer) or (renderer.redBand(), renderer.greenBand(), renderer.blueBand()) != (1, 2, 3):
+        _sanborn_fail("neutral RGB bands verification failed for " + layer.name())
+    for enhancement in (renderer.redContrastEnhancement(), renderer.greenContrastEnhancement(), renderer.blueContrastEnhancement()):
+        if enhancement is not None and enhancement.contrastEnhancementAlgorithm() != QgsContrastEnhancement.NoEnhancement:
+            _sanborn_fail("channel stretch must remain disabled for " + layer.name())
     if brightness.brightness() != int(expected["brightness"]):
         _sanborn_fail("brightness verification failed for " + layer.name())
     if not math.isclose(brightness.gamma(), float(expected["gamma"]), abs_tol=1e-9):

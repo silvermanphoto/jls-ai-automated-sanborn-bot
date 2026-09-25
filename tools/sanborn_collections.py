@@ -27,13 +27,12 @@ MAP_BOOK = Path(
     "/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book"
 )
 
-# Brightness, gamma and contrast are Joel's fixed rendering formula: every
-# Sanborn sheet must be drawn identically or the mosaic looks patchy where the
-# sheets meet. Band 4 is the alpha channel the georeferencer writes.
+# Joel requires the original TIFF appearance (2026-09-25): neutral color values
+# and no channel stretch. Band 4 is the georeferencer's real alpha channel.
 STANDARD_STYLE: dict[str, Any] = {
-    "brightness": 50,
-    "gamma": 1.2,
-    "contrast": 20,
+    "brightness": 0,
+    "gamma": 1.0,
+    "contrast": 0,
     "opacity": 1.0,
     "alpha_band": 4,
 }

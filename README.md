@@ -2,7 +2,7 @@
 
 Downloads the 1911 Atlanta Sanborn fire insurance maps from the Library of Congress, works
 out where each sheet belongs on the ground, and prepares it as a georeferenced layer for
-QGIS. Current system version: **1.16**.
+QGIS. Current system version: **1.17**.
 
 Historic Sanborn maps have been scanned and publicly readable for years without being
 georeferenced, so until GIS tools came along, historical study meant holding a picture of a map beside a real map. Even with GIS georeferencing, pinning an old map to a current map accurately takes hours per map.This repository holds a local system that automates the placement of Sanborns for Atlanta.
@@ -139,7 +139,7 @@ back added layers if a later step fails.
 
 Approved sheets go in printed-number order inside `1911 ATLANTA SANBORNS`, which sits
 immediately below the orthorectified index layer and outside it. Every completed raster renders
-at 100% opacity with Brightness +50, Gamma 1.2, Contrast +20, and band 4 as a real alpha band,
+at 100% opacity with Brightness 0, Gamma 1.0, Contrast 0 (no channel stretch), and band 4 as a real alpha band,
 with the RGB band rows collapsed. The generated code contains no project-save call, and it
 verifies that the protected `.qgz` modification time did not change.
 
@@ -164,10 +164,11 @@ Two notes on the current Mac toolchain, both outside this repository:
 396 sheets are cataloged. Five have finished GeoTIFFs: 196, 236, 474, 486, and 487. The batch
 queue holds two verified sheets and three waiting on human street review.
 
-The test suite is 122 tests and runs in about two seconds. It last passed complete at version
-1.15 on 2026-07-26, including a real GDAL warp whose embedded provenance passed resume
-verification. On 2026-09-22, 14 of those tests fail on this Mac from the two broken Homebrew
-packages described above, and not from a change in this code.
+Version 1.17 passes all 158 engine tests, including real GDAL warping, embedded provenance,
+independent historical street checks, approval changes and QGIS rollback. The app selects one
+working GDAL installation and uses QGIS's matching coordinate definitions when Homebrew is
+unavailable. Tests create their small source fixture with Pillow, so they do not depend on the
+optional Homebrew-only gdal_create command.
 
 Large source scans and finished GeoTIFFs stay out of the repository. They can be downloaded
 again from the Library of Congress or rebuilt from the saved controls and audit records.
@@ -188,3 +189,19 @@ The same restriction that makes the maps citable applies to anything added next.
 County commissioners of roads and revenues minutes are digitized, they can be searched the same
 way, against a fixed list of approved sources, with page-level citations attached to whatever
 comes back.
+
+## Historical street measurements
+
+`tools/sanborn_historical.py prepare TILE --reference washington-rawson-topo-1958`
+builds source/reference previews for a prepared sheet. The typed app bridge supplies measurements
+to `export TILE` on standard input: three fit corners plus at least three withheld check corners.
+It writes a reviewed control proposal, never approval. `sanborn_batch.py packet` accepts its
+`--historical-evidence` record, copies it into the immutable attempt and adds original-topo views
+to the existing comparison. Reference files, preview, measurements and check errors remain bound
+to the approval and final QGIS evidence chain. Planned adjustment-map lines are not control targets.
+
+Preserve the legacy manual workflow. Previously preferred cardinal-v2 targets for486/493/494 and
+the prior487 placement were superseded by September25,2026 original-topo evidence; register any
+replacement point record to its actual scan before reuse. Do not apply one tile's scale globally.
+
+2026-09-25 appearance correction: preserve the original TIFF appearance. Brightness and contrast stay at 0, gamma at 1, opacity at 100%, alpha band 4, and RGB channel stretching is disabled. This supersedes every earlier enhanced-display preset; it does not alter the source pixels.

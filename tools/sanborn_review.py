@@ -9,6 +9,8 @@ required artifact.  No live QGIS session or network request is needed.
 
 from __future__ import annotations
 
+from sanborn_historical import validate_evidence as validate_historical_evidence
+
 import argparse
 from datetime import datetime, timezone
 import hashlib
@@ -430,7 +432,7 @@ def _make_contact_sheet(
     cell_width = 880
     cell_height = 660
     header = 44
-    sheet = Image.new("RGB", (cell_width * 2, (cell_height + header) * 2), "white")
+    sheet = Image.new("RGB", (cell_width * 2, (cell_height + header) * math.ceil(len(panels) / 2)), "white")
     draw = ImageDraw.Draw(sheet)
     for index, (title, panel) in enumerate(panels):
         row, column = divmod(index, 2)
@@ -490,6 +492,18 @@ def _current_provenance(review: dict[str, Any], gdalinfo: str) -> dict[str, Any]
         "renderer_code": current_code,
         "software": _software_provenance(),
     }
+    historical = stored.get("historical_evidence")
+    if historical is not None:
+        current["historical_evidence"] = _check_record(historical, "historical street measurements")
+        evidence = json.loads(Path(historical["path"]).read_text())
+        validate_historical_evidence(evidence, review["source"]["path"], review["points"]["path"])
+        current["historical_reference"] = _check_record(stored.get("historical_reference", {}), "the original historical reference")
+        if current["historical_reference"] != evidence["reference"]:
+            fail("Historical measurements and reference provenance disagree.")
+        current["historical_profile"] = evidence["reference_profile"]
+        current["historical_measurement_preview"] = _check_record(stored.get("historical_measurement_preview", {}), "the measurement preview")
+        if current["historical_measurement_preview"] != evidence["reference_preview"]:
+            fail("The historical preview provenance differs from its measurement record.")
     font_record = stored.get("font")
     if isinstance(font_record, dict) and font_record.get("path"):
         current["font"] = _check_record(font_record, "the review-packet font")
@@ -631,6 +645,13 @@ def create_packet(args: argparse.Namespace) -> int:
     if not kauffman_map.is_file():
         fail(f"The Kauffman reference map is missing: {kauffman_map}")
     labels = validate_control_labels(args.control_label)
+    historical_evidence_path = getattr(args, "historical_evidence", None)
+    historical_evidence = None
+    if historical_evidence_path:
+        historical_evidence_path = historical_evidence_path.expanduser().resolve()
+        historical_evidence = validate_historical_evidence(json.loads(historical_evidence_path.read_text()), source, points)
+        if [p["label"] for p in historical_evidence["controls"]] != labels:
+            fail("Historical corner names differ from the review controls.")
     target_seed_context = parse_target_seed_context(args.target_seed_json)
     if review_dir.exists() and any(review_dir.iterdir()) and not args.replace:
         fail(f"Review folder is not empty: {review_dir}. Use --replace to rebuild it.")
@@ -648,6 +669,11 @@ def create_packet(args: argparse.Namespace) -> int:
         font_resource,
         target_seed_context,
     )
+    if historical_evidence:
+        input_snapshot["historical measurements"] = _file_record(historical_evidence_path)
+        input_snapshot["historical reference"] = _file_record(Path(historical_evidence["reference"]["path"]))
+        input_snapshot["historical measurement preview"] = _file_record(Path(historical_evidence["reference_preview"]["path"]))
+        input_snapshot["historical measurement code"] = _file_record(Path(__file__).with_name("sanborn_historical.py"))
     source_info = capture_json([gdalinfo, "-json", str(source)])
     source_width, source_height = source_info["size"]
     target_crs, controls = read_points(points)
@@ -861,6 +887,27 @@ def create_packet(args: argparse.Namespace) -> int:
     _draw_target_controls(kauffman_overlay, controls, labels, extent, target_font)
     kauffman_overlay.save(artifact_paths["kauffman_overlay"])
 
+    historical_views = []
+    historical_coverage = None
+    if historical_evidence:
+        historical_raster = review_dir / "historical-reference.tif"
+        historical_overlay_path = review_dir / "historical-overlay.png"
+        subprocess.run([gdalwarp, "-q", "-t_srs", target_crs, "-te", *[str(v) for v in extent],
+                        "-ts", str(map_size[0]), str(map_size[1]), "-r", "cubic", "-dstalpha", "-overwrite",
+                        historical_evidence["reference"]["path"], str(historical_raster)], check=True)
+        historical_raw = Image.open(historical_raster).convert("RGBA")
+        historical_coverage = sum(historical_raw.getchannel("A").histogram()[1:]) / float(map_size[0]*map_size[1])
+        if historical_coverage < .05:
+            fail("The original topo has no meaningful coverage at this sheet. Use a reference that covers its actual streets.")
+        historical_image = _white_background(historical_raw)
+        historical_overlay = Image.blend(historical_image, georef_image, .45)
+        _draw_target_controls(historical_overlay, controls, labels, extent, target_font)
+        historical_overlay.save(historical_overlay_path)
+        artifact_paths["historical_reference"] = historical_raster
+        artifact_paths["historical_overlay"] = historical_overlay_path
+        historical_views = [("1958 original topo: primary historic reference", historical_image),
+                            ("1958 topo overlay: check streets beyond the fit corners", historical_overlay)]
+
     georef_marked = georef_image.copy()
     _draw_target_controls(georef_marked, controls, labels, extent, target_font)
     _make_contact_sheet(
@@ -869,6 +916,7 @@ def create_packet(args: argparse.Namespace) -> int:
             ("Affine preview: target controls", georef_marked),
             ("Local OSM named roads", osm_overlay),
             ("1921 Kauffman map overlay", kauffman_overlay),
+            *historical_views,
         ),
         artifact_paths["contact_sheet"],
         font(24, font_resource),
@@ -878,6 +926,12 @@ def create_packet(args: argparse.Namespace) -> int:
         controls[index]["label"] = label
     _require_render_inputs_unchanged(input_snapshot)
     provenance = _build_provenance(osm_db, kauffman_map, font_resource, gdalinfo)
+    if historical_evidence:
+        provenance["historical_evidence"] = _file_record(historical_evidence_path)
+        provenance["historical_reference"] = historical_evidence["reference"]
+        provenance["historical_profile"] = historical_evidence["reference_profile"]
+        provenance["historical_measurement_preview"] = historical_evidence["reference_preview"]
+        provenance["renderer_code"]["sanborn_historical"] = _file_record(Path(__file__).with_name("sanborn_historical.py"))
     render_spec = {
         "target_crs": target_crs,
         "target_extent": [float(value) for value in extent],
@@ -897,6 +951,10 @@ def create_packet(args: argparse.Namespace) -> int:
             "coverage_fraction": kauffman_coverage,
         },
         "affine_preview": {"order": 1, "resampling": "cubic"},
+        **({"historical_reference": {"raster_coverage_fraction": historical_coverage,
+            "coverage_note": "Raster coverage includes blank paper; each measured street also passed a drawn-ink check.",
+            "independent_checks": historical_evidence["independent_checks"],
+            "uncertainty": historical_evidence["reference_profile"]["uncertainty"]}} if historical_evidence else {}),
     }
     artifacts = {
         key: _artifact_record(path, gdalinfo) for key, path in sorted(artifact_paths.items())
@@ -930,7 +988,7 @@ def create_packet(args: argparse.Namespace) -> int:
         "provenance": provenance,
         "render_spec": render_spec,
         "artifacts": artifacts,
-        "required_artifacts": list(REQUIRED_ARTIFACTS),
+        "required_artifacts": list(artifact_paths),
         "local_geographic_verification": {
             "method": LOCAL_REFERENCE_METHOD,
             "network_required": False,
@@ -938,7 +996,10 @@ def create_packet(args: argparse.Namespace) -> int:
             "instructions": (
                 "Inspect review-contact-sheet.png at full size. Confirm the three source "
                 "crosshairs name the intended intersections and that the transformed street "
-                "grid agrees with both the blue OSM roads and the 1921 Kauffman overlay."
+                "grid agrees with genuinely surviving OSM street centerlines and historical evidence. "
+                "Where supplied, the 1958 original topo is primary for vanished streets; Kauffman is supporting context. "
+                "Do not use planned road lines or changed curbs as original street centers. "
+                "Zero residual at three fit corners is not independent validation."
             ),
         },
         "approval_token": token,
@@ -988,7 +1049,7 @@ def approve_packet(args: argparse.Namespace) -> int:
         fail("Approval requires a nonblank reviewer name.")
     token, _ = current_review_state(review)
     artifact_hashes = {
-        key: review["artifacts"][key]["sha256"] for key in REQUIRED_ARTIFACTS
+        key: review["artifacts"][key]["sha256"] for key in review["artifacts"]
     }
     record = {
         "schema_version": SCHEMA_VERSION,
@@ -998,7 +1059,7 @@ def approve_packet(args: argparse.Namespace) -> int:
         "note": args.note,
         "geographic_verification": {
             "reference_method": LOCAL_REFERENCE_METHOD,
-            "note": "Hash-locked local OSM road and 1921 Kauffman overlays reviewed.",
+            "note": "Hash-locked street references and comparison views reviewed; historical measurements remain historical evidence.",
             "artifact_sha256": artifact_hashes,
         },
     }
@@ -1044,7 +1105,7 @@ def require_approval(review_dir: Path) -> tuple[dict, dict]:
     if verification.get("reference_method") != LOCAL_REFERENCE_METHOD:
         fail("Approval does not certify the required local OSM and Kauffman overlays.")
     expected_hashes = {
-        key: review["artifacts"][key]["sha256"] for key in REQUIRED_ARTIFACTS
+        key: review["artifacts"][key]["sha256"] for key in review["artifacts"]
     }
     if verification.get("artifact_sha256") != expected_hashes:
         fail("Approval does not match every required local review artifact.")
@@ -1055,6 +1116,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     create = sub.add_parser("create", help="Generate the fully local approval packet")
+    create.add_argument("--historical-evidence", type=Path)
     create.add_argument("--source", required=True, type=Path)
     create.add_argument("--points", required=True, type=Path)
     create.add_argument("--review-dir", required=True, type=Path)

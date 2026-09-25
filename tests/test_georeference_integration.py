@@ -9,6 +9,8 @@ import tempfile
 import unittest
 from unittest import mock
 
+from PIL import Image
+
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -18,7 +20,7 @@ import sanborn_batch  # noqa: E402
 
 class GeoreferenceIntegrationTests(unittest.TestCase):
     def test_real_gdal_warp_embeds_provenance_and_passes_resume_verification(self):
-        required = ("gdal_create", "gdalinfo", "gdal_translate", "gdalwarp", "gdal_edit.py")
+        required = ("gdalinfo", "gdal_translate", "gdalwarp", "gdal_edit.py")
         if not all(shutil.which(program) for program in required):
             self.skipTest("The full local GDAL toolchain is required")
         with tempfile.TemporaryDirectory() as temporary:
@@ -29,27 +31,9 @@ class GeoreferenceIntegrationTests(unittest.TestCase):
             ledger = output.with_suffix(".georef.json")
             protected = folder / "protected.qgz"
             database = folder / "queue.sqlite3"
-            subprocess.run(
-                [
-                    shutil.which("gdal_create"),
-                    "-q",
-                    "-of",
-                    "GTiff",
-                    "-outsize",
-                    "100",
-                    "100",
-                    "-bands",
-                    "3",
-                    "-burn",
-                    "230",
-                    "-burn",
-                    "220",
-                    "-burn",
-                    "190",
-                    str(source),
-                ],
-                check=True,
-            )
+            # Fixture creation needs no GDAL executable. Keep the actual warp,
+            # embedded evidence and resume verification on the real toolchain.
+            Image.new("RGB", (100, 100), (230, 220, 190)).save(source, format="TIFF")
             points.write_text(
                 "#CRS: EPSG:3857\n"
                 "mapX,mapY,sourceX,sourceY,enable\n"

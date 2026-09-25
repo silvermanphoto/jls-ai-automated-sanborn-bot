@@ -2468,6 +2468,13 @@ def cmd_packet(args: argparse.Namespace) -> int:
             command.extend(["--osm-db", str(packet_osm)])
         if args.kauffman_map is not None:
             command.extend(["--kauffman-map", str(args.kauffman_map)])
+        historical_evidence = getattr(args, "historical_evidence", None)
+        if historical_evidence:
+            immutable_evidence = review_dir / "historical-street-evidence.json"
+            shutil.copy2(historical_evidence, immutable_evidence)
+            if sha256(immutable_evidence) != sha256(historical_evidence):
+                fail("The historical street evidence copy did not verify.")
+            command.extend(["--historical-evidence", str(immutable_evidence)])
         if args.allow_distortion:
             command.extend(
                 ["--allow-distortion", "--distortion-note", args.distortion_note]
@@ -3004,9 +3011,9 @@ def cmd_finish(args: argparse.Namespace) -> int:
                     "approval_sha256": sha256(review_dir / "approval.json"),
                     "group": "1911 ATLANTA SANBORNS",
                     "sort_key": args.tile,
-                    "brightness": 50,
-                    "gamma": 1.2,
-                    "contrast": 20,
+                    "brightness": 0,
+                    "gamma": 1.0,
+                    "contrast": 0,
                     "opacity": 1.0,
                     "expanded": False,
                     "save_project": False,
@@ -3185,6 +3192,7 @@ def parse_args() -> argparse.Namespace:
         help="Local OSM index; defaults to the exact index recorded by propose",
     )
     packet.add_argument("--kauffman-map", type=Path)
+    packet.add_argument("--historical-evidence", type=Path)
     packet.add_argument("--index-json", type=Path, default=DEFAULT_INDEX_JSON)
     packet.add_argument("--control-label", action="append", default=[])
     packet.add_argument(

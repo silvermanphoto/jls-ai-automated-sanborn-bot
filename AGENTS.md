@@ -11,7 +11,7 @@ Use the master instruction manual in this folder as the operating source of trut
 - Never overwrite a source JP2, TIFF, point file, or accepted georeferenced output.
 - Never save or close `/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/JLS Master Map File.qgz` unless Joel explicitly authorizes it in that turn.
 - Keep Global Opacity at 100%. Use a real alpha band for empty warp areas; never make black map ink transparent.
-- Apply QGIS Layer Rendering values Brightness +50, Gamma 1.2, and Contrast +20 to completed Sanborn rasters.
+- Apply QGIS Layer Rendering values Brightness 0, Gamma 1.0, and Contrast 0; disable channel stretching to completed Sanborn rasters.
 - Immediately collapse every completed Sanborn raster's layer-tree entry after loading it so its Band 1 (Red), Band 2 (Green), and Band 3 (Blue) legend rows stay closed by default.
 - Use exactly three strong, distant, non-collinear controls by default. OpenStreetMap is modern ground truth; Kauffman is the historical cross-check.
 - Require the fully local, hash-locked OSM and Kauffman packet before approval. Live QGIS is not required for reference review.
@@ -137,3 +137,5 @@ Remote: `origin` using HTTPS. After every commit, push to keep GitHub in sync.
 5. Audit file sizes before every push. Do not push a file over GitHub's 100 MB limit.
 6. Commit `.db`, `.sqlite`, and `.sqlite3` data files. If one exceeds 100 MB, warn Joel before committing and discuss Git LFS.
 7. Use clean commit authorship. Never add AI co-author or generation-credit trailers.
+
+2026-09-25 appearance correction: preserve the original TIFF appearance. Brightness and contrast stay at 0, gamma at 1, opacity at 100%, alpha band 4, and RGB channel stretching is disabled. This supersedes every earlier enhanced-display preset; it does not alter the source pixels.

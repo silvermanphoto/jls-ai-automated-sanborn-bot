@@ -197,7 +197,7 @@ This is a permanent output and display rule.
 - Empty areas created when the sheet is rotated, stretched, or warped must have alpha value `0` (fully transparent), not black RGB pixels.
 - Valid map pixels must remain fully opaque (normally alpha value `255`).
 - In QGIS, **Layer Properties > Transparency > Global Opacity** must always be set to **100%**.
-- In QGIS, **Layer Properties > Symbology > Layer Rendering > Color rendering**, apply these defaults to every completed Sanborn raster: **Brightness +50**, **Gamma 1.2**, and **Contrast +20**.
+- In QGIS, **Layer Properties > Symbology > Layer Rendering > Color rendering**, apply these defaults to every completed Sanborn raster: **Brightness 0**, **Gamma 1.0**, and **Contrast 0**, with no channel stretch.
 - Immediately collapse the completed raster's entry in the QGIS Layers panel so **Band 1 (Red)**, **Band 2 (Green)**, and **Band 3 (Blue)** are hidden by default. Apply this after every load or reload; Joel should never have to close the RGB band list manually.
 - Never lower Global Opacity to reveal the basemap. For comparison, blink the historic layer off and on instead.
 - Never make RGB value `0,0,0` globally transparent. Sanborn linework and text contain genuine black ink that must remain visible.
@@ -687,9 +687,9 @@ Resampling method: Cubic (4x4 Kernel)
 Create world file only: unchecked
 Destination alpha band: required; empty warp areas must be transparent
 Global Opacity after loading: 100%
-Layer Rendering Brightness: +50
-Layer Rendering Gamma: 1.2
-Layer Rendering Contrast: +20
+Layer Rendering Brightness: 0
+Layer Rendering Gamma: 1.0
+Layer Rendering Contrast: 0; no channel stretch
 Set target resolution: unchecked unless the user specifies a resolution
 Save GCP points: checked
 Load in project when done: checked
@@ -1109,7 +1109,7 @@ The job is complete only when every item below is true.
 - [ ] Empty areas outside the warped sheet footprint are transparent, with no added black wedges or borders.
 - [ ] Genuine black ink within the sheet remains opaque and visible.
 - [ ] QGIS Global Opacity is exactly 100% (`renderer().opacity() == 1.0`).
-- [ ] QGIS Layer Rendering uses Brightness `+50`, Gamma `1.2`, and Contrast `+20`.
+- [ ] QGIS Layer Rendering uses Brightness `0`, Gamma `1.0`, and Contrast `0`, with no channel stretch.
 - [ ] The finished raster's QGIS layer-tree entry is collapsed, with its Red, Green, and Blue band rows hidden.
 
 ### GCP integrity
@@ -1189,7 +1189,7 @@ Prove the printed tile through the Apple Vision top-title-corner gate; Tesseract
 
 Build and inspect the fully local, hash-locked OSM and Kauffman contact sheet in a new timestamped packet folder with its own immutable control copy. Never reuse an older packet. A live QGIS connection is not required for reference review. OSM remains ground truth wherever an intersection survives; Kauffman is the historical cross-check for vanished streets and orientation. Reject rubber-banding, wrong-neighborhood fits, or affine shear caused by a doubtful point. Permit a documented historic-sheet distortion only with `--allow-distortion` and a nonblank note hash-locked with the exact warnings; export and packet creation each require their own explicit flag and note.
 
-After approval, run the deterministic local finish step for the EPSG:3857 GeoTIFF, real alpha band, lossless compression, checksums, embedded source/control/affine/pipeline provenance, ledger, and schema-3 QGIS manifest. Dry-run the QGIS helper before using its emitted payload. Require the complete packet and seed evidence chain, whole-project duplicate preflight, rollback on live failure, the exact index and group order, numeric tile order, 100% opacity, Brightness +50, Gamma 1.2, Contrast +20, alpha band 4, and collapsed raster rows. Leave the project open and unsaved.
+After approval, run the deterministic local finish step for the EPSG:3857 GeoTIFF, real alpha band, lossless compression, checksums, embedded source/control/affine/pipeline provenance, ledger, and schema-3 QGIS manifest. Dry-run the QGIS helper before using its emitted payload. Require the complete packet and seed evidence chain, whole-project duplicate preflight, rollback on live failure, the exact index and group order, numeric tile order, 100% opacity, Brightness 0, Gamma 1.0, Contrast 0 (no channel stretch), alpha band 4, and collapsed raster rows. Leave the project open and unsaved.
 ```
 
 ---
@@ -1753,7 +1753,7 @@ Live QGIS verification completed on 2026-07-15 established:
 - exact root-level index name `1911 Sanborn Index Orthorectified — OSM 9-point fine-tuned (2026-07-14)`;
 - exact index source `/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/Stage 1 -Orthorectified Atlanta Maps to print/1911 Sanborn Index Orthorectified_OSM_9point_finetuned_2026-07-14.tif`, in EPSG:3857 with alpha band 4;
 - root-level group `1911 ATLANTA SANBORNS` immediately below that index, with the index outside the group;
-- completed Sanborn renderers use opacity `1.0`, Brightness `+50`, Gamma `1.2`, Contrast `+20`, and alpha band `4`.
+- completed Sanborn renderers use opacity `1.0`, Brightness `0`, Gamma `1.0`, Contrast `0` (no channel stretch), and alpha band `4`.
 
 The QGIS helper must verify these live names and properties rather than infer them. It must keep the group expanded, sort its raster children by printed tile number, collapse every raster row, verify one registry entry and one tree node per incoming canonical path, and prove the protected project file was not written.
 
@@ -1762,3 +1762,5 @@ The generated v1.12 QGIS code was then exercised twice against this open protect
 That live exercise used an equivalent in-memory hash-bound plan because the older Tile 236 raster predates creation of an adjacent schema-3 ledger. Schema-3 offline manifest validation is covered by the automated tests. Record the live result precisely; do not describe it as a live schema-3 manifest run.
 
 The present schema-3 revision was separately exercised inside the installed QGIS 3.42.1 runtime using the real fine-tuned index and synthetic tile rasters. It passed duplicate prevention, numeric sorting, style, collapsed-row, rollback, provenance, and no-save probes. The QGIS MCP connection was unavailable for that pass, so it did not inspect or mutate Joel's open protected project. Keep this isolated current-revision evidence distinct from the earlier live Tile 236 evidence.
+
+2026-09-25 appearance correction: preserve the original TIFF appearance. Brightness and contrast stay at 0, gamma at 1, opacity at 100%, alpha band 4, and RGB channel stretching is disabled. This supersedes every earlier enhanced-display preset; it does not alter the source pixels.

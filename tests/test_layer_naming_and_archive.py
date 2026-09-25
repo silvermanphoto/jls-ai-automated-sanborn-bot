@@ -185,9 +185,9 @@ class CollectionTests(unittest.TestCase):
 
     def test_the_fixed_rendering_formula_is_carried_by_the_collection(self):
         style = sanborn_collections.get().style
-        self.assertEqual(style["brightness"], 50)
-        self.assertEqual(style["gamma"], 1.2)
-        self.assertEqual(style["contrast"], 20)
+        self.assertEqual(style["brightness"], 0)
+        self.assertEqual(style["gamma"], 1.0)
+        self.assertEqual(style["contrast"], 0)
         self.assertEqual(style["alpha_band"], 4)
 
     def test_an_unknown_collection_says_what_exists(self):

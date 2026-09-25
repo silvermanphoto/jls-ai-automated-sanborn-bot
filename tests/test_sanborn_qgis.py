@@ -215,9 +215,9 @@ def write_manifest(folder: Path, tile: int, **changes) -> Path:
         "approval_sha256": file_sha256(approval_json),
         "group": GROUP_NAME,
         "sort_key": tile,
-        "brightness": 50,
-        "gamma": 1.2,
-        "contrast": 20,
+        "brightness": 0,
+        "gamma": 1.0,
+        "contrast": 0,
         "opacity": 1.0,
         "expanded": False,
         "save_project": False,
@@ -331,6 +331,8 @@ def generated_helper_namespace():
     core.QgsLayerTreeLayer = FakeLayerNode
     core.QgsProject = type("FakeProjectClass", (), {})
     core.QgsRasterLayer = FakeRasterLayer
+    core.QgsMultiBandColorRenderer = type("FakeMultiBandRenderer", (), {})
+    core.QgsContrastEnhancement = type("FakeContrastEnhancement", (), {"NoEnhancement": 0})
     qgis = types.ModuleType("qgis")
     qgis.core = core
     namespace = {"PLAN": {}}
@@ -440,7 +442,7 @@ class SanbornQgisPlanTests(unittest.TestCase):
     def test_manifest_must_preserve_rendering_and_no_save_contract(self):
         cases = (
             {"brightness": 49},
-            {"gamma": 1.0},
+            {"gamma": 1.2},
             {"contrast": 19},
             {"opacity": 0.5},
             {"expanded": True},
