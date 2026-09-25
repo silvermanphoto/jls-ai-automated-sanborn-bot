@@ -30,6 +30,7 @@ from PIL import Image
 
 from sanborn_review import require_approval, validate_control_labels
 from sanborn_qgis import load_manifest as validate_qgis_manifest
+from sanborn_placement_policy import require_current_placement_evidence
 from sanborn_georeference import (
     AFFINE_METADATA_KEY,
     PIPELINE_METADATA_KEY,
@@ -492,6 +493,9 @@ def _archive_verified_result(row: sqlite3.Row) -> list[str]:
             "The verified GeoTIFF, ledger, and QGIS manifest are not a complete set; "
             "repair them before reopening."
         )
+    # Validate the original hashes before rewriting relocation-only paths and
+    # ledger digest. Otherwise relocation could accidentally bless a changed ledger.
+    validate_qgis_manifest(candidates[-1], for_import=False)
     counter = 1
     while archive.exists():
         archive = archive_root / f"{stamp}-{counter}"
@@ -499,10 +503,10 @@ def _archive_verified_result(row: sqlite3.Row) -> list[str]:
     archive.mkdir(parents=True, exist_ok=False)
     originals = archive / "originals"
     bundle = archive / "verified-bundle"
-    originals.mkdir()
-    bundle.mkdir()
     copied: list[tuple[Path, Path]] = []
     try:
+        originals.mkdir()
+        bundle.mkdir()
         for path in candidates:
             destination = originals / path.name
             shutil.copy2(path, destination)
@@ -548,7 +552,7 @@ def _archive_verified_result(row: sqlite3.Row) -> list[str]:
             json.dumps(manifest_record, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
-        validate_qgis_manifest(archived_manifest)
+        validate_qgis_manifest(archived_manifest, for_import=False)
 
         evidence_copies: list[dict[str, str]] = []
         review_value = manifest_record.get("review_dir")
@@ -611,25 +615,28 @@ def _archive_verified_result(row: sqlite3.Row) -> list[str]:
             ],
         }
         _write_json_atomic(retirement_state, retirement_record)
+        # Check again before retiring originals so a mid-copy change cannot
+        # cause us to remove bytes that were never preserved in this archive.
+        for path, saved in copied:
+            if sha256(path) != sha256(saved):
+                fail(f"Original changed during archive creation: {path}")
         for path, _ in copied:
             path.unlink()
         retirement_record["state"] = "retired"
         retirement_record["retired_utc"] = utc_now()
         _write_json_atomic(retirement_state, retirement_record)
     except Exception:
+        # Keep the recovery record if restoration itself fails. Otherwise this
+        # attempt is fully rolled back and its partial copies serve no purpose.
         for original, saved in copied:
             if not original.exists() and saved.is_file():
                 original.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(saved, original)
-        state_path = archive / "retirement-state.json"
-        if state_path.is_file():
-            try:
-                state = json.loads(state_path.read_text(encoding="utf-8"))
-                state["state"] = "rolled-back"
-                state["rolled_back_utc"] = utc_now()
-                _write_json_atomic(state_path, state)
-            except (OSError, json.JSONDecodeError):
-                pass
+                if sha256(original) != sha256(saved):
+                    fail(f"Archive rollback could not restore {original}; preserve {archive}.")
+        shutil.rmtree(archive)
+        if archive_root.is_dir() and not any(archive_root.iterdir()):
+            archive_root.rmdir()
         raise
     return [str(archive / "archive-index.json"), str(bundle / manifest.name)]
 
@@ -654,7 +661,12 @@ def reopen_tile(
             fail("Only a previously verified tile can be reopened directly to approved.")
         if not row["review_dir"] or not row["points_path"]:
             fail(f"Tile {tile} no longer has its approved review evidence.")
-        require_approval(Path(str(row["review_dir"])))
+        try:
+            review, _ = require_approval(Path(str(row["review_dir"])))
+            require_current_placement_evidence(tile, review)
+        except (RuntimeError, ValueError) as exc:
+            fail(f"Cannot reuse this approval: {exc} Reopen to review-ready and rebuild "
+                 "the packet; an engine or toolchain change requires fresh approval.")
     if destination == "review-ready":
         required = ("source_path", "source_sha256", "spatial_ocr_path")
         missing = [name for name in required if not row[name]]
@@ -677,13 +689,11 @@ def reopen_tile(
         points_path=(
             None
             if destination in {"queued", "review-ready"}
-            and current in {"awaiting-approval", "approved", "verified"}
             else row["points_path"]
         ),
         review_dir=(
             None
             if destination in {"queued", "review-ready"}
-            and current in {"awaiting-approval", "approved", "verified"}
             else row["review_dir"]
         ),
         output_path=(
@@ -2903,6 +2913,7 @@ def cmd_finish(args: argparse.Namespace) -> int:
         review_dir = Path(row["review_dir"])
         seed_context = _require_fresh_stored_seed(row)
         review, approval = require_approval(review_dir)
+        require_current_placement_evidence(args.tile, review)
         output = DOWNLOAD_DIR / output_name(args.tile)
         ledger = output.with_suffix(".georef.json")
         source = Path(str(row["source_path"])).resolve()

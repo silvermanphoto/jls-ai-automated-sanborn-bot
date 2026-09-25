@@ -54,3 +54,19 @@ batch/reviews/**/*.tif
 # Generated historical-reference workspaces
 batch/historical-workspaces/
 _local/
+
+# Private QGIS projects and connection-bearing backups are never public code.
+*.qgz
+*.qgs
+archive/qgis-projects/
+*.p12
+*.pfx
+*.keychain
+*.keychain-db
+qgis-auth.db
+credentials.json
+auth.json
+
+# Public releases contain software, not a user's working queue and provenance.
+/batch/
+/1911 SANBORN DOWNLOADS/

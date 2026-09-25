@@ -126,7 +126,7 @@ class HistoricalPacketTests(LocalReviewPacketTests):
                 'source_x':x,'source_y':y,'reference_x':(lon-gt[0])/gt[1],'reference_y':(lat-gt[3])/gt[5]})
         source_info=historical.metadata(self.source)
         controls,checks,diagnostics,summary=historical.assess_measurements(rows,source_info,reference_info)
-        record={'selection_origin':'historical-reference','reference_profile':historical.profile('washington-rawson-topo-1958'),
+        record={'tile':486,'selection_origin':'historical-reference','reference_profile':historical.profile('washington-rawson-topo-1958'),
             'current_source':historical.file_record(self.source),'reference':historical.file_record(reference),
             'reference_preview':historical.file_record(preview),'measurements':rows,'source_info':source_info,
             'reference_info':reference_info,'controls':controls,'check_corners':checks,'diagnostics':diagnostics,
@@ -134,6 +134,7 @@ class HistoricalPacketTests(LocalReviewPacketTests):
         evidence=self.root/'historical-evidence.json';evidence.write_text(json.dumps(record))
         args=self._create_args();args.replace=True;args.historical_evidence=evidence
         args.control_label=[row['label'] for row in rows[:3]]
+        seed=json.loads(args.target_seed_json);seed['tile']=486;args.target_seed_json=json.dumps(seed)
         # Synthetic reference has sparse grid ink. The dedicated coverage test above
         # verifies rejection; here bypass only that visual-content classifier.
         with mock.patch.object(historical,'MAP_ROOT',self.root), mock.patch.object(historical,'drawn_coverage',return_value=True):
@@ -146,8 +147,14 @@ class HistoricalPacketTests(LocalReviewPacketTests):
             current_review_state(review)
             approval_args=type('Args',(),{'review_dir':self.review_dir,'approved_by':'Test','note':''})()
             approve_packet(approval_args)
-            _,approval=require_approval(self.review_dir)
+            reviewed,approval=require_approval(self.review_dir)
             self.assertIn('historical_overlay',approval['geographic_verification']['artifact_sha256'])
+            from sanborn_placement_policy import require_current_placement_evidence
+            require_current_placement_evidence(486, reviewed)
+            frozen,_=require_approval(self.review_dir,frozen=True)
+            require_current_placement_evidence(486, frozen)
+            with self.assertRaisesRegex(RuntimeError, 'superseded'):
+                require_current_placement_evidence(487, frozen)
             changed=json.loads(evidence.read_text());changed['measurements'][3]['reference_x']+=30
             evidence.write_text(json.dumps(changed))
             with self.assertRaisesRegex(RuntimeError,'changed'):

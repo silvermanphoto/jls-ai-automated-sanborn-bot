@@ -248,6 +248,20 @@ class ArchiveTests(unittest.TestCase):
         after = self.project.read_bytes(), self.project.stat().st_mtime_ns
         self.assertEqual(before, after)
 
+    def test_default_backup_is_local_and_never_launches_git(self):
+        from unittest.mock import patch
+        with patch.object(sanborn_archive, "ARCHIVE_DIR", self.archive_dir), \
+                patch("subprocess.run", side_effect=AssertionError("No Git or network calls")):
+            target, _ = sanborn_archive.archive_project(self.project)
+        self.assertEqual(target.read_bytes(), self.project.read_bytes())
+
+    def test_old_publication_option_stops_before_copying(self):
+        with self.assertRaisesRegex(sanborn_archive.ArchiveError, "publication"):
+            sanborn_archive.archive_project(
+                self.project, archive_dir=self.archive_dir, commit=True
+            )
+        self.assertFalse(self.archive_dir.exists())
+
     def test_a_missing_project_stops_the_import(self):
         with self.assertRaises(sanborn_archive.ArchiveError):
             sanborn_archive.archive_project(

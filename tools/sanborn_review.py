@@ -10,6 +10,7 @@ required artifact.  No live QGIS session or network request is needed.
 from __future__ import annotations
 
 from sanborn_historical import validate_evidence as validate_historical_evidence
+from sanborn_placement_policy import require_current_placement_evidence
 
 import argparse
 from datetime import datetime, timezone
@@ -1048,6 +1049,7 @@ def approve_packet(args: argparse.Namespace) -> int:
     if not approved_by:
         fail("Approval requires a nonblank reviewer name.")
     token, _ = current_review_state(review)
+    require_current_placement_evidence(review["safety_limits"]["target_seed_context"]["tile"], review)
     artifact_hashes = {
         key: review["artifacts"][key]["sha256"] for key in review["artifacts"]
     }
@@ -1075,7 +1077,47 @@ def approve_packet(args: argparse.Namespace) -> int:
     return 0
 
 
-def require_approval(review_dir: Path) -> tuple[dict, dict]:
+def frozen_review_state(review: dict[str, Any]) -> tuple[str, dict]:
+    """Verify a completed packet's bytes and original lock without rerendering it.
+
+    Renderer, font, software and raster metadata are immutable historical inputs
+    in the token. They need not match the machine consuming a completed result.
+    New approvals and warps must continue to use current_review_state instead.
+    The caller must also verify the manifest's review/approval file hashes.
+    """
+    if review.get("schema_version") != SCHEMA_VERSION:
+        fail("The completed review packet uses an unsupported schema.")
+    source = _check_record(review.get("source"), "the source scan")
+    points = _check_record(review.get("points"), "the control-points file")
+    provenance = review.get("provenance")
+    artifacts = review.get("artifacts")
+    if not isinstance(provenance, dict) or not isinstance(artifacts, dict):
+        fail("The completed packet lacks frozen provenance or artifacts.")
+    for key in ("osm_database", "kauffman_map"):
+        _check_record(provenance.get(key), key)
+    for key in ("historical_evidence", "historical_reference", "historical_measurement_preview"):
+        if key in provenance:
+            _check_record(provenance[key], key)
+    if not set(REQUIRED_ARTIFACTS).issubset(artifacts):
+        fail("The completed packet is missing required review artifacts.")
+    for key, record in artifacts.items():
+        _check_record(record, f"review artifact {key}")
+    for key in ("affine_diagnostics", "safety_limits", "render_spec"):
+        if not isinstance(review.get(key), dict):
+            fail(f"The completed packet lacks its frozen {key}.")
+    token = approval_token(
+        Path(source["path"]), Path(points["path"]), review["affine_diagnostics"],
+        labels=[str(control["label"]) for control in review["points"]["controls"]],
+        target_crs=review["points"]["target_crs"],
+        safety_limits=review["safety_limits"], provenance=provenance,
+        artifacts=artifacts, render_spec=review["render_spec"],
+    )
+    if token != review.get("approval_token"):
+        fail("The completed packet no longer matches its frozen approval token.")
+    return token, review["affine_diagnostics"]
+
+
+def require_approval(review_dir: Path, *, frozen: bool = False) -> tuple[dict, dict]:
     review_file = review_dir / "review.json"
     approval_file = review_dir / "approval.json"
     if not review_file.is_file() or not approval_file.is_file():
@@ -1098,7 +1140,8 @@ def require_approval(review_dir: Path) -> tuple[dict, dict]:
         fail("The approval record timestamp is invalid.")
     if approved_time.tzinfo is None or approved_time.utcoffset() is None:
         fail("The approval record timestamp must include a timezone.")
-    current_token, _ = current_review_state(review)
+    state_reader = frozen_review_state if frozen else current_review_state
+    current_token, _ = state_reader(review)
     if current_token != approval.get("approval_token"):
         fail("The local review packet changed after approval. Rebuild and approve it again.")
     verification = approval.get("geographic_verification", {})

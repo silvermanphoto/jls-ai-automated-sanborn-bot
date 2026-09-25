@@ -346,7 +346,7 @@ class SanbornQgisPlanTests(unittest.TestCase):
     def setUp(self):
         sanborn_qgis._SHA256_CACHE.clear()
 
-        def read_approval(review_dir):
+        def read_approval(review_dir, **kwargs):
             folder = Path(review_dir)
             return (
                 json.loads((folder / "review.json").read_text(encoding="utf-8")),
@@ -441,10 +441,10 @@ class SanbornQgisPlanTests(unittest.TestCase):
 
     def test_manifest_must_preserve_rendering_and_no_save_contract(self):
         cases = (
-            {"brightness": 49},
-            {"gamma": 1.2},
-            {"contrast": 19},
-            {"opacity": 0.5},
+            {"brightness": "invalid"},
+            {"gamma": float("nan")},
+            {"contrast": False},
+            {"opacity": None},
             {"expanded": True},
             {"save_project": True},
             {"group": "Wrong group"},
@@ -455,6 +455,26 @@ class SanbornQgisPlanTests(unittest.TestCase):
                 manifest = write_manifest(Path(temp), 154, **changes)
                 with self.assertRaises(ManifestError):
                     build_plan([manifest])
+
+    def test_completed_style_and_renderer_are_history_and_import_uses_current_style(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = write_manifest(Path(temp), 154, brightness=50, gamma=1.2, contrast=20)
+            record = json.loads(path.read_text())
+            review = json.loads((Path(record["review_dir"]) / "review.json").read_text())
+            renderer = Path(next(iter(review["provenance"]["renderer_code"].values()))["path"])
+            renderer.write_bytes(b"upgraded renderer")
+            plan = build_plan([path])
+            self.assertEqual(plan["style"], sanborn_qgis.STYLE)
+            self.assertEqual(plan["tiles"][0]["recorded_style"]["brightness"], 50)
+            self.assertNotIn(str(renderer), [item["path"] for item in plan["tiles"][0]["additional_evidence"]])
+
+    def test_superseded_results_are_archivable_but_not_importable(self):
+        for tile in (486, 487, 493, 494):
+            with self.subTest(tile=tile), tempfile.TemporaryDirectory() as temp:
+                path = write_manifest(Path(temp), tile)
+                self.assertEqual(sanborn_qgis.load_manifest(path, for_import=False)["tile"], tile)
+                with self.assertRaisesRegex(ManifestError, "superseded"):
+                    build_plan([path])
 
     def test_raster_and_ledger_files_are_hash_verified(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -490,9 +510,6 @@ class SanbornQgisPlanTests(unittest.TestCase):
             ),
             "Kauffman map": lambda manifest, review: Path(
                 review["provenance"]["kauffman_map"]["path"]
-            ),
-            "renderer code": lambda manifest, review: Path(
-                next(iter(review["provenance"]["renderer_code"].values()))["path"]
             ),
             "seed record": lambda manifest, review: Path(
                 manifest["target_seed"]["provenance"]["path"]

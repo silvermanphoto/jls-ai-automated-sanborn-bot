@@ -677,6 +677,36 @@ class BatchSafetyTests(unittest.TestCase):
         self.assertEqual(row["points_path"], str(points))
         approval_check.assert_called_once_with(review_dir)
 
+    def test_reopen_to_approved_explains_when_a_fresh_packet_is_required(self):
+        review_dir = self.folder / "review"
+        with sanborn_batch.connect(self.database) as db:
+            queue(db, 154, "verified", review_dir=str(review_dir), points_path="old.points")
+            with mock.patch.object(sanborn_batch, "require_approval", side_effect=RuntimeError("renderer changed")):
+                with self.assertRaisesRegex(RuntimeError, "Reopen to review-ready.*fresh approval"):
+                    sanborn_batch.reopen_tile(db, 154, "approved", "Check old result")
+            self.assertEqual(db.execute("SELECT status FROM tiles WHERE tile=154").fetchone()["status"], "verified")
+
+    def test_reopen_clears_locked_links_but_keeps_historical_packet_files(self):
+        source, spatial, points = [self.folder / name for name in ("source.jp2", "ocr.json", "controls.points")]
+        review_dir = self.folder / "review"
+        review_dir.mkdir()
+        review_file, approval_file = review_dir / "review.json", review_dir / "approval.json"
+        for path in (source, spatial, points, review_file, approval_file):
+            path.write_bytes(b"immutable historical evidence")
+        originals = {path: path.read_bytes() for path in (points, review_file, approval_file)}
+        for status in ("awaiting-approval", "approved", "failed", "proposal-rejected", "proposal-stale"):
+            with self.subTest(status=status), sanborn_batch.connect(self.database) as db:
+                db.execute("DELETE FROM tiles WHERE tile=154")
+                queue(db, 154, status, source_path=str(source), source_sha256=sanborn_batch.sha256(source),
+                      spatial_ocr_path=str(spatial), printed_number_seen=1, points_path=str(points), review_dir=str(review_dir))
+                sanborn_batch.reopen_tile(db, 154, "review-ready", "Choose new historic street centers")
+                row = db.execute("SELECT * FROM tiles WHERE tile=154").fetchone()
+                self.assertIsNone(row["points_path"])
+                self.assertIsNone(row["review_dir"])
+                self.assertEqual(row["status"], "review-ready")
+                for path, content in originals.items():
+                    self.assertEqual(path.read_bytes(), content)
+
     def test_verified_rebuild_archives_prior_fixed_name_result(self):
         batch_dir = self.folder / "batch"
         output = self.folder / "Sanborn 1911 -- Tile 196_georeferenced.tif"
@@ -773,6 +803,7 @@ class BatchSafetyTests(unittest.TestCase):
         self.assertEqual(status, "verified")
         for path, content in expected.items():
             self.assertEqual(path.read_bytes(), content)
+        self.assertEqual(list((batch_dir / "archive").glob("tile-*/*")), [])
 
     def test_archive_unlink_failure_restores_every_original_and_keeps_verified_status(self):
         batch_dir, output, ledger, manifest = self._minimal_archive_fixture()
@@ -801,6 +832,7 @@ class BatchSafetyTests(unittest.TestCase):
         self.assertEqual(unlink_count[0], 2)
         for path, content in expected.items():
             self.assertEqual(path.read_bytes(), content)
+        self.assertEqual(list((batch_dir / "archive").glob("tile-*/*")), [])
 
     def test_retired_old_archive_is_never_restored_as_a_new_verified_result(self):
         batch_dir, output, ledger, manifest = self._minimal_archive_fixture(pixels=b"PIXELS-V1")

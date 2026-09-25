@@ -2,7 +2,7 @@
 
 Downloads the 1911 Atlanta Sanborn fire insurance maps from the Library of Congress, works
 out where each sheet belongs on the ground, and prepares it as a georeferenced layer for
-QGIS. Current system version: **1.17**.
+QGIS. Current system version: **1.18**.
 
 Historic Sanborn maps have been scanned and publicly readable for years without being
 georeferenced, so until GIS tools came along, historical study meant holding a picture of a map beside a real map. Even with GIS georeferencing, pinning an old map to a current map accurately takes hours per map.This repository holds a local system that automates the placement of Sanborns for Atlanta.
@@ -10,7 +10,7 @@ georeferenced, so until GIS tools came along, historical study meant holding a p
 ![Three adjoining 1911 Sanborn sheets positioned over present-day aerial imagery of Summerhill](docs/images/summerhill-sheets-over-the-connector.jpg)
 
 Three adjoining 1911 sheets covering Summerhill, placed by the engine over present-day aerial
-imagery. No control point was picked by hand.
+imagery. Current work requires reviewed street controls and independent checks for each sheet.
 
 ## The problem the highway creates
 
@@ -164,7 +164,7 @@ Two notes on the current Mac toolchain, both outside this repository:
 396 sheets are cataloged. Five have finished GeoTIFFs: 196, 236, 474, 486, and 487. The batch
 queue holds two verified sheets and three waiting on human street review.
 
-Version 1.17 passes all 158 engine tests, including real GDAL warping, embedded provenance,
+Version 1.18 passes all 167 engine tests, including real GDAL warping, embedded provenance,
 independent historical street checks, approval changes and QGIS rollback. The app selects one
 working GDAL installation and uses QGIS's matching coordinate definitions when Homebrew is
 unavailable. Tests create their small source fixture with Pillow, so they do not depend on the
@@ -173,7 +173,7 @@ optional Homebrew-only gdal_create command.
 Large source scans and finished GeoTIFFs stay out of the repository. They can be downloaded
 again from the Library of Congress or rebuilt from the saved controls and audit records.
 
-The earlier hands-on georeferencing workflow remains on the private branch
+The earlier hands-on georeferencing workflow remains on the preserved branch
 `legacy-manual-georeferencing-v1.9`, anchored at commit `253c137`. `main` carries the
 local-first batch system.
 
@@ -205,3 +205,13 @@ the prior487 placement were superseded by September25,2026 original-topo evidenc
 replacement point record to its actual scan before reuse. Do not apply one tile's scale globally.
 
 2026-09-25 appearance correction: preserve the original TIFF appearance. Brightness and contrast stay at 0, gamma at 1, opacity at 100%, alpha band 4, and RGB channel stretching is disabled. This supersedes every earlier enhanced-display preset; it does not alter the source pixels.
+
+## Completed evidence and new reviews (1.18)
+
+Completed maps retain verifiable source, controls, approval, raster and ledger evidence after software or display defaults change. New approvals and new warps still require current evidence. Reopening clears the active comparison while preserving historical records and verified copies of prior results. The superseded 486, 487, 493 and 494 placements remain blocked until a fresh original-topo comparison passes independent street checks.
+
+## Public software and private project data
+
+This repository intentionally shares the georeferencing software with historians and academics. Keep personal credentials, connection secrets, private service URLs and QGIS project files out of Git. Dated QGIS backups are stored locally under `_local/qgis-project-backups/`; importing a sheet never commits or uploads those backups. Review database contents and staged changes before publishing. Removing a tracked file does not remove it from earlier Git history.
+
+The public checkout excludes the working `batch/` and `1911 SANBORN DOWNLOADS/` trees. Run the documented catalog, index and preparation steps to create your local data; queue state and completed review records belong to the local installation.

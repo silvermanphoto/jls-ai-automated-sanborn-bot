@@ -90,7 +90,7 @@ Use the master instruction manual in this folder as the operating source of trut
 - Generated v1.12 QGIS code was exercised twice in the open protected project using existing Tile 236. Both runs reused the raster and group without duplication; preserved numeric order `154 / 196 / 236 / 474 / 485 / 486 / 493 / 494`; kept the group immediately below the exact index, expanded, with every child collapsed; confirmed Brightness +50, Gamma 1.2, Contrast +20, opacity 1.0, and alpha band 4; left the project dirty and unsaved; returned `save_project=false`; and left the protected `.qgz` modification time at `1784010514439060200`. Because this older raster predates an adjacent schema-3 ledger, the live exercise used an equivalent in-memory hash-bound plan. Schema-3 manifests are validated offline by the test suite; never mislabel this as a live schema-3 manifest run.
 - The present schema-3 code has also been exercised in the installed QGIS 3.42.1 runtime using the real fine-tuned index and synthetic tiles. The QGIS MCP connection was unavailable, so that current pass did not inspect or mutate Joel's open protected project. Keep the older Tile 236 live evidence and the current isolated schema-3 evidence separate.
 - The completed one-time local setup on 2026-07-15 contains 396 official Library of Congress catalog records across four volumes, 31,918 indexed OSM ways with 21,434 exact shared intersection nodes, and 345 index-location seeds: 227 unique high-confidence and 37 explicitly ambiguous. Reuse these local stores; refresh them only deliberately because their hashes are approval provenance.
-- Before replacing the established manual workflow on `main`, preserve the last published manual state as private branch `legacy-manual-georeferencing-v1.9` at commit `253c137`. Git history already retains it, but the named branch makes recovery visible and prevents future sessions from mistaking the local-first rewrite for deletion of the earlier method.
+- Before replacing the established manual workflow on `main`, preserve the last published manual state as branch `legacy-manual-georeferencing-v1.9` at commit `253c137`. Git history already retains it, but the named branch makes recovery visible and prevents future sessions from mistaking the local-first rewrite for deletion of the earlier method.
 - Real Tile 154 passed the Apple Vision title gate. Its 250-meter proposal ranked Auburn × Butler, Auburn × Fort, and Houston/Dobbs × Butler first, and its existing local packet was visually inspected. The exercised final output took about 5 seconds and is 6587 × 7845 RGBA with SHA-256 `6b3162c42e1d414b9d0ca8213352bd33b6436baecc3576f4c028fa4402aacc6c` and band checksums `23168 / 61645 / 40864 / 26750`; the protected project remained unchanged.
 - Real Tile 474 exercised a hash-locked distortion exception with scale ratio `1.3393`, axis angle `98.500°`, a written note, 67 OSM ways, and the Kauffman crop. Its final output took about 5.5 seconds and is 7735 × 9239 RGBA with SHA-256 `f1de82562647d0ecb27b1815da9c8056329b084565e0747c6c8b82b5e7852083` and band checksums `55125 / 14515 / 65108 / 51289`; the protected project remained unchanged.
 
@@ -125,17 +125,23 @@ Use the master instruction manual in this folder as the operating source of trut
 
 ## Git and GitHub sync
 
-This repo is synced to a PRIVATE GitHub repository:
+Joel explicitly designated this engine as PUBLIC on 2026-09-25 so historians and academics can use its software:
 https://github.com/silvermanphoto/jls-ai-automated-sanborn-bot
 
 Remote: `origin` using HTTPS. After every commit, push to keep GitHub in sync.
 
 1. Always push after committing; a local-only commit is incomplete work.
 2. Never force-push without Joel's explicit approval.
-3. Keep the repository private.
+3. Keep this engine repository public. This explicit project exception supersedes the global private-repository default. Other repositories retain their existing visibility unless Joel authorizes a change.
 4. Never commit build artifacts, secrets, logs, JP2 source scans, or generated GeoTIFFs. Update `.gitignore` when a new generated category appears.
 5. Audit file sizes before every push. Do not push a file over GitHub's 100 MB limit.
-6. Commit `.db`, `.sqlite`, and `.sqlite3` data files. If one exceeds 100 MB, warn Joel before committing and discuss Git LFS.
+6. Keep production databases and working map records local in this public repository. This scoped privacy exception overrides the general database-backup rule. Never delete local data when untracking it. Separately reviewed, deliberately published datasets need their own authorization.
 7. Use clean commit authorship. Never add AI co-author or generation-credit trailers.
 
 2026-09-25 appearance correction: preserve the original TIFF appearance. Brightness and contrast stay at 0, gamma at 1, opacity at 100%, alpha band 4, and RGB channel stretching is disabled. This supersedes every earlier enhanced-display preset; it does not alter the source pixels.
+
+## Public publication boundary — 2026-09-25
+
+Share reviewed software and public historical-map evidence. Never publish passwords, API or access tokens, private keys, authentication databases, connection secrets, private service URLs or unreviewed personal notes. Before each push, audit the actual staged changes; filename exclusions do not protect files already tracked. QGIS master files and dated backups stay local under ignored storage. Importing a map must not commit or push any project backup. Preserve local originals when removing a file from public tracking. Review database contents before publishing a database change; credentials and private data override the general database-backup rule. Suspected exposure in existing history requires a redacted report and a separate remediation decision; never silently rewrite history or force-push. Public source code is not the same as an open-source license; do not invent a license on Joel's behalf.
+
+Public release scope: `batch/` and `1911 SANBORN DOWNLOADS/` contain runtime databases, review packets, source paths and provenance. They stay local and ignored. Publish code, tests, documentation and deliberately reviewed public assets; do not sweep runtime records into a software release.

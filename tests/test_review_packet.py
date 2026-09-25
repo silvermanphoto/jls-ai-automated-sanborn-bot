@@ -10,11 +10,13 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 from PIL import Image, ImageDraw
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 
+import sanborn_review
 from sanborn_osm import EARTH_RADIUS_METERS, import_osm, web_mercator
 from sanborn_review import (
     LOCAL_REFERENCE_METHOD,
@@ -250,6 +252,59 @@ class LocalReviewPacketTests(unittest.TestCase):
             set(approval["geographic_verification"]["artifact_sha256"]),
             set(REQUIRED_ARTIFACTS),
         )
+
+    def _approve_for_frozen_test(self):
+        approve_packet(argparse.Namespace(review_dir=self.review_dir,
+            approved_by="Test reviewer", note="Reviewed the completed evidence."))
+
+    def test_frozen_approval_survives_renderer_and_software_updates_but_new_approval_does_not(self):
+        # Approve using a private copy of the renderer so no production code is
+        # modified merely to exercise a code-upgrade boundary.
+        path = self.review_dir / "review.json"
+        review = json.loads(path.read_text())
+        renderer = self.root / "renderer-copy.py"
+        shutil.copy2(Path(sanborn_review.__file__), renderer)
+        review["provenance"]["renderer_code"]["sanborn_review"] = sanborn_review._file_record(renderer)
+        review["approval_token"] = sanborn_review.approval_token(
+            self.source, self.points, review["affine_diagnostics"],
+            labels=[p["label"] for p in review["points"]["controls"]],
+            target_crs=review["points"]["target_crs"], safety_limits=review["safety_limits"],
+            provenance=review["provenance"], artifacts=review["artifacts"], render_spec=review["render_spec"])
+        path.write_text(json.dumps(review))
+        self._approve_for_frozen_test()
+        renderer.write_text(renderer.read_text() + "\n# renderer upgrade\n")
+        with mock.patch.object(sanborn_review, "_software_provenance", return_value={"gdal": "future"}):
+            with mock.patch.object(sanborn_review, "require_program", side_effect=AssertionError("No live toolchain needed")):
+                require_approval(self.review_dir, frozen=True)
+            with self.assertRaisesRegex(RuntimeError, "renderer code"):
+                require_approval(self.review_dir)
+            with self.assertRaisesRegex(RuntimeError, "renderer code"):
+                self._approve_for_frozen_test()
+
+    def test_frozen_approval_rejects_changed_source_points_references_and_artifacts(self):
+        self._approve_for_frozen_test()
+        review = json.loads((self.review_dir / "review.json").read_text())
+        paths = [self.source, self.points, self.osm_db, self.kauffman,
+                 *[Path(record["path"]) for record in review["artifacts"].values()]]
+        for path in paths:
+            with self.subTest(path=path.name):
+                original = path.read_bytes()
+                try:
+                    path.write_bytes(original + b"changed")
+                    with self.assertRaisesRegex(RuntimeError, "changed"):
+                        require_approval(self.review_dir, frozen=True)
+                finally:
+                    path.write_bytes(original)
+        require_approval(self.review_dir, frozen=True)
+
+    def test_frozen_approval_recomputes_original_token(self):
+        self._approve_for_frozen_test()
+        path = self.review_dir / "review.json"
+        review = json.loads(path.read_text())
+        review["render_spec"]["changed"] = True
+        path.write_text(json.dumps(review))
+        with self.assertRaisesRegex(RuntimeError, "frozen approval token"):
+            require_approval(self.review_dir, frozen=True)
 
     def test_approval_requires_named_reviewer_current_schema_and_zoned_timestamp(self):
         with self.assertRaisesRegex(RuntimeError, "nonblank reviewer"):

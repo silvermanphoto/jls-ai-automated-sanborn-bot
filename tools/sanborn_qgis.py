@@ -23,6 +23,7 @@ import sanborn_archive
 import sanborn_collections
 from sanborn_layer_names import intersection_for_proposal
 from sanborn_review import REQUIRED_ARTIFACTS, require_approval
+from sanborn_placement_policy import require_current_placement_evidence
 
 
 # Which body of sheets this run is placing. Everything that is specific to the
@@ -348,8 +349,12 @@ def _load_ledger(
     return record
 
 
-def load_manifest(path: Path) -> dict[str, Any]:
-    """Validate one schema-v3 QGIS import manifest without importing QGIS."""
+def load_manifest(path: Path, *, for_import: bool = True) -> dict[str, Any]:
+    """Verify frozen completion evidence; import also requires current eligibility.
+
+    for_import=False is for preserving withdrawn results in the archive only.
+    It must never produce an import plan. Display uses the collection style.
+    """
     manifest = path.expanduser().resolve()
     if not manifest.is_file():
         _fail(f"QGIS import manifest does not exist: {manifest}")
@@ -374,9 +379,12 @@ def load_manifest(path: Path) -> dict[str, Any]:
     if record.get("expanded") is not False:
         _fail(f"{manifest}: expanded must be false so RGB rows stay collapsed")
 
-    for key in ("brightness", "gamma", "contrast", "opacity"):
-        if not _is_number(record.get(key), float(STYLE[key])):
-            _fail(f"{manifest}: {key} must be {STYLE[key]}")
+    # Completed manifests retain their display settings as history. Import
+    # always applies STYLE from the current collection, never these old values.
+    recorded_style = {key: record.get(key) for key in ("brightness", "gamma", "contrast", "opacity")}
+    if any(not isinstance(value, (int, float)) or isinstance(value, bool)
+           or not math.isfinite(value) for value in recorded_style.values()):
+        _fail(f"{manifest}: historical display settings must be finite numbers")
 
     raster = _absolute_file(record, "path", manifest, "finished raster")
     printed = tile_number_from_name(raster.name)
@@ -439,7 +447,7 @@ def load_manifest(path: Path) -> dict[str, Any]:
     if sha256(approval_json) != expected_approval_digest:
         _fail(f"{manifest}: approval.json changed after final verification")
     try:
-        approved_review, approval = require_approval(review_dir)
+        approved_review, approval = require_approval(review_dir, frozen=True)
     except (RuntimeError, OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
         _fail(f"{manifest}: approval packet no longer verifies: {exc}")
     approved_verification = approval.get("geographic_verification", {})
@@ -474,15 +482,8 @@ def load_manifest(path: Path) -> dict[str, Any]:
     renderer_code = review_provenance.get("renderer_code")
     if not isinstance(renderer_code, dict) or not renderer_code:
         _fail(f"{manifest}: approved review lacks renderer-code provenance")
-    for key, value in sorted(renderer_code.items()):
-        additional_evidence.append(
-            _verified_evidence_file(value, manifest, f"approved renderer code {key}")
-        )
-    font_record = review_provenance.get("font")
-    if isinstance(font_record, dict) and font_record.get("path"):
-        additional_evidence.append(
-            _verified_evidence_file(font_record, manifest, "approved review font")
-        )
+    # Renderer/font bytes and software versions stay bound by the original
+    # token, but upgrading them cannot invalidate an already completed raster.
 
     seed_provenance = target_seed.get("provenance")
     seed_file = _verified_evidence_file(
@@ -584,7 +585,14 @@ def load_manifest(path: Path) -> dict[str, Any]:
             {"name": key, "path": str(artifact_path), "sha256": artifact_sha256[key]}
         )
 
+    if for_import:
+        try:
+            require_current_placement_evidence(tile, approved_review)
+        except (RuntimeError, OSError, ValueError, KeyError, TypeError) as exc:
+            _fail(f"{manifest}: {exc}")
+
     return {
+        "recorded_style": recorded_style,
         "tile": tile,
         "sort_key": tile,
         "path": str(raster),
