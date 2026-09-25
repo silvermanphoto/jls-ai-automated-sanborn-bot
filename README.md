@@ -2,7 +2,7 @@
 
 Downloads the 1911 Atlanta Sanborn fire insurance maps from the Library of Congress, works
 out where each sheet belongs on the ground, and prepares it as a georeferenced layer for
-QGIS. Current system version: **1.18**.
+QGIS. Current system version: **1.19**.
 
 Historic Sanborn maps have been scanned and publicly readable for years without being
 georeferenced, so until GIS tools came along, historical study meant holding a picture of a map beside a real map. Even with GIS georeferencing, pinning an old map to a current map accurately takes hours per map.This repository holds a local system that automates the placement of Sanborns for Atlanta.
@@ -164,7 +164,7 @@ Two notes on the current Mac toolchain, both outside this repository:
 396 sheets are cataloged. Five have finished GeoTIFFs: 196, 236, 474, 486, and 487. The batch
 queue holds two verified sheets and three waiting on human street review.
 
-Version 1.18 passes all 167 engine tests, including real GDAL warping, embedded provenance,
+Version 1.19 passes all 174 engine tests, including real GDAL warping, embedded provenance,
 independent historical street checks, approval changes and QGIS rollback. The app selects one
 working GDAL installation and uses QGIS's matching coordinate definitions when Homebrew is
 unavailable. Tests create their small source fixture with Pillow, so they do not depend on the
@@ -215,3 +215,7 @@ Completed maps retain verifiable source, controls, approval, raster and ledger e
 This repository intentionally shares the georeferencing software with historians and academics. Keep personal credentials, connection secrets, private service URLs and QGIS project files out of Git. Dated QGIS backups are stored locally under `_local/qgis-project-backups/`; importing a sheet never commits or uploads those backups. Review database contents and staged changes before publishing. Removing a tracked file does not remove it from earlier Git history.
 
 The public checkout excludes the working `batch/` and `1911 SANBORN DOWNLOADS/` trees. Run the documented catalog, index and preparation steps to create your local data; queue state and completed review records belong to the local installation.
+
+## Retaining two versions of an existing sheet (1.19)
+
+An explicitly retained full-sheet and alpha pair can coexist when importing other verified sheets. Supply `--preserve-existing-variants` with a local preservation record naming the pair and their checksums. Both must already be loaded in the Sanborn group. The importer checks the complete project for extra copies, preserves their relative order, and refuses to replace either through this exception. The preservation record and raster files remain local.

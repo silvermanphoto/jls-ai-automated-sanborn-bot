@@ -304,6 +304,10 @@ class FakeGroup:
         self._children.insert(index, node)
         node._parent = self
 
+    def reorderGroupLayers(self, layers):
+        nodes = {node.layerId(): node for node in self._children}
+        self._children = [nodes[layer.id()] for layer in layers]
+
 
 class FakeRoot(FakeGroup):
     def findLayers(self):
@@ -694,6 +698,133 @@ class SanbornQgisPlanTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(RuntimeError, "displays tile 154.*source filename is tile 236"):
             helpers["_sanborn_check_group_contents"](group, {})
+
+    def _preserved_pair_fixture(self, folder):
+        full = folder / "Sanborn 1911 -- Tile 486_georeferenced_v4 1958 topo fit.tif"
+        alpha = full.with_name(full.stem + " alpha" + full.suffix)
+        full.write_bytes(b"corrected full sheet")
+        alpha.write_bytes(b"corrected alpha sheet")
+        decision = folder / "preserve-pair.json"
+        decision.write_text(json.dumps({"schema_version": 1,
+            "purpose": "preserve-existing-full-alpha-pair", "tile": 486,
+            "approved_by": "Joel", "note": "Retain both previously corrected variants.",
+            "variants": [{"role": role, "path": str(path.resolve()), "sha256": file_sha256(path)}
+                         for role, path in (("full", full), ("alpha", alpha))]}))
+        layers = [FakeRasterLayer(str(path.resolve()), "Sanborn 1911 - tile 486 (" + role + ")", layer_id=role)
+                  for role, path in (("full", full), ("alpha", alpha))]
+        group = FakeGroup([FakeLayerNode(layer) for layer in layers])
+        helpers = generated_helper_namespace()
+        helpers["PLAN"]["preserved_existing_variants"] = [sanborn_qgis.load_preserved_variant_pair(decision)]
+        return decision, layers, group, helpers
+
+    def test_explicit_existing_pair_survives_unrelated_import_and_stable_sort(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            decision, layers, group, helpers = self._preserved_pair_fixture(folder)
+            manifest = write_manifest(folder, 495)
+            plan = build_plan([manifest], preserve_existing_variants=decision)
+            self.assertEqual(plan["preserved_existing_variants"][0]["tile"], 486)
+            incoming = {495: plan["tiles"][0]}
+            helpers["_sanborn_check_group_contents"](group, incoming)
+            project = types.SimpleNamespace(mapLayers=lambda: {layer.id(): layer for layer in layers})
+            helpers["_sanborn_preflight_project_tiles"](project, FakeRoot([group]), incoming)
+            # Exercise the same post-insertion checks and ordering used by live
+            # import, preserving both existing objects and their relative order.
+            added = FakeRasterLayer(incoming[495]["path"], "Sanborn 1911 - tile 495", "new-495")
+            group.insertChildNode(0, FakeLayerNode(added))
+            earlier = FakeRasterLayer("/tmp/Tile 236.tif", "Sanborn 1911 - tile 236", "earlier-236")
+            group.insertChildNode(0, FakeLayerNode(earlier))
+            self.assertEqual(helpers["_sanborn_numeric_order"](group), [236, 486, 486, 495])
+            helpers["_sanborn_check_group_contents"](group, incoming)
+            self.assertEqual([node.layer() for node in group.children()][1:3], layers)
+            self.assertEqual(sum(node.layerId() == "new-495" for node in group.children()), 1)
+
+    def test_pair_requires_explicit_record_and_rejects_extra_or_repeated_variants(self):
+        for change in ("no-record", "third-variant", "same-path", "arbitrary-other-tile"):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as temp:
+                _, layers, group, helpers = self._preserved_pair_fixture(Path(temp))
+                if change == "no-record":
+                    helpers["PLAN"].clear()
+                elif change == "third-variant":
+                    group.insertChildNode(0, FakeLayerNode(FakeRasterLayer("/tmp/Tile 486_other.tif", "Tile 486", "third")))
+                elif change == "same-path":
+                    group._children[1] = FakeLayerNode(layers[0], parent=group)
+                else:
+                    for index in range(2):
+                        group.insertChildNode(0, FakeLayerNode(FakeRasterLayer(f"/tmp/Tile 236_{index}.tif", "Tile 236", str(index))))
+                with self.assertRaisesRegex(RuntimeError, "more than once"):
+                    helpers["_sanborn_check_group_contents"](group, {})
+
+    def test_preservation_record_does_not_authorize_importing_its_tile(self):
+        with tempfile.TemporaryDirectory() as temp:
+            decision, layers, group, helpers = self._preserved_pair_fixture(Path(temp))
+            with mock.patch.object(sanborn_qgis, "load_manifests", return_value=[{"tile": 486}]):
+                with self.assertRaisesRegex(ManifestError, "Cannot import a tile"):
+                    build_plan([], preserve_existing_variants=decision)
+            with self.assertRaisesRegex(RuntimeError, "more than once|cannot import"):
+                helpers["_sanborn_check_group_contents"](group, {486: {"path": layers[0].source()}})
+
+    def test_preserved_pair_requires_both_layers_already_loaded_and_current_hashes(self):
+        for change in ("missing-pair", "missing-alpha", "changed-full", "changed-record"):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as temp:
+                decision, layers, group, helpers = self._preserved_pair_fixture(Path(temp))
+                if change == "missing-pair": group = None
+                elif change == "missing-alpha": group._children.pop()
+                elif change == "changed-full": Path(layers[0].source()).write_bytes(b"replaced pixels")
+                else: decision.write_text(decision.read_text() + "\n")
+                with self.assertRaisesRegex(RuntimeError, "not already present|evidence changed"):
+                    helpers["_sanborn_check_group_contents"](group, {})
+
+    def test_preservation_does_not_weaken_incoming_path_or_registry_duplicate_guards(self):
+        with tempfile.TemporaryDirectory() as temp:
+            _, _, group, helpers = self._preserved_pair_fixture(Path(temp))
+            incoming = {495: {"path": "/tmp/Tile 495_current.tif"}}
+            other = FakeRasterLayer("/tmp/Tile 495_other.tif", "Tile 495", "other-495")
+            project = types.SimpleNamespace(mapLayers=lambda: {other.id(): other})
+            with self.assertRaisesRegex(RuntimeError, "points to a different raster"):
+                helpers["_sanborn_preflight_project_tiles"](project, FakeRoot([group, FakeLayerNode(other)]), incoming)
+            duplicates = [FakeRasterLayer(incoming[495]["path"], "Tile 495", str(index)) for index in range(2)]
+            project = types.SimpleNamespace(mapLayers=lambda: {layer.id(): layer for layer in duplicates})
+            with self.assertRaisesRegex(RuntimeError, "already registered more than once"):
+                helpers["_sanborn_preflight_raster"](project, incoming[495])
+
+    def test_preserved_pair_rejects_additional_registry_layers_or_tree_nodes_anywhere(self):
+        for change in ("duplicate-registry", "duplicate-tree", "third-source", "unresolved-node"):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as temp:
+                _, layers, group, helpers = self._preserved_pair_fixture(Path(temp))
+                registry = {layer.id(): layer for layer in layers}
+                root = FakeRoot([group])
+                if change == "duplicate-registry":
+                    extra = FakeRasterLayer(layers[0].source(), "Tile 486", "duplicate")
+                    registry[extra.id()] = extra
+                elif change == "duplicate-tree":
+                    root.insertChildNode(0, FakeLayerNode(layers[0]))
+                elif change == "third-source":
+                    extra = FakeRasterLayer("/tmp/Tile 486_unapproved.tif", "Tile 486", "third")
+                    registry[extra.id()] = extra
+                else:
+                    root.insertChildNode(0, FakeLayerNode(None, "Tile 486"))
+                project = types.SimpleNamespace(mapLayers=lambda: registry)
+                with self.assertRaisesRegex(RuntimeError, "exactly one full and one alpha"):
+                    helpers["_sanborn_preflight_project_tiles"](project, root, {495: {"path": "/tmp/Tile 495.tif"}})
+
+    def test_preservation_loader_rejects_invalid_authorization_and_variant_identity(self):
+        for change in ("missing-note", "same-role", "wrong-tile", "hash-change", "not-alpha-sibling"):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as temp:
+                folder = Path(temp)
+                decision, _, _, _ = self._preserved_pair_fixture(folder)
+                record = json.loads(decision.read_text())
+                if change == "missing-note": record["note"] = " "
+                elif change == "same-role": record["variants"][1]["role"] = "full"
+                elif change == "wrong-tile": record["tile"] = 487
+                elif change == "hash-change": record["variants"][0]["sha256"] = "0" * 64
+                else:
+                    other = folder / "Tile 486_other.tif"
+                    other.write_bytes(b"other")
+                    record["variants"][1].update(path=str(other.resolve()), sha256=file_sha256(other))
+                decision.write_text(json.dumps(record))
+                with self.assertRaises(ManifestError):
+                    sanborn_qgis.load_preserved_variant_pair(decision)
 
     def test_live_rollback_removes_new_layer_and_new_group(self):
         helpers = generated_helper_namespace()

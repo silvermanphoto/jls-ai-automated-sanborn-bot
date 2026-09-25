@@ -2,7 +2,7 @@
 
 > Open findings from the 2026-09 code review: ~/.claude/overseer/reviews/2026-09/jls-ai-automated-sanborn-bot.md and ~/.claude/overseer/reviews/2026-09/sanborn-comparison.md. Mention them to Joel at the start of each session; delete this line once none are open.
 
-Use the local-first version 1.18 workflow. Read `AGENTS.md` for standing safety rules, `LOCAL BATCH ENGINE.md` for commands, and `AI AUTOMATED SANBORN BOT - MASTER INSTRUCTIONS.md` for the full evidence policy. Keep explanations in plain English.
+Use the local-first version 1.19 workflow. Read `AGENTS.md` for standing safety rules, `LOCAL BATCH ENGINE.md` for commands, and `AI AUTOMATED SANBORN BOT - MASTER INSTRUCTIONS.md` for the full evidence policy. Keep explanations in plain English.
 
 ## Public software, private data
 
@@ -52,8 +52,10 @@ Reviewer and note are mandatory. `--replace-existing` deliberately supersedes an
 - Every completed raster uses opacity 1.0, Brightness 0, Gamma 1.0, Contrast 0 (no channel stretch), and alpha band 4. Generated QGIS code must perform duplicate preflight and rollback and must contain no project-save call.
 - Earlier live Tile 236 evidence used an equivalent hash-bound plan, not a live schema-3 manifest. The present schema-3 revision was exercised in the installed QGIS 3.42.1 runtime with the real index and synthetic tiles; the unavailable QGIS MCP connection prevented a current run against Joel's open protected project. Keep those claims separate.
 
-Version 1.18 passes all 167 engine tests with the working QGIS GDAL family, including real warping and embedded-provenance resume checks. When using QGIS GDAL, set PROJ_LIB and PROJ_DATA to its Contents/Resources/proj folder and GDAL_DATA to Contents/Resources/gdal.
+Version 1.19 passes all 174 engine tests with the working QGIS GDAL family, including real warping and embedded-provenance resume checks. When using QGIS GDAL, set PROJ_LIB and PROJ_DATA to its Contents/Resources/proj folder and GDAL_DATA to Contents/Resources/gdal.
 
 2026-09-25 appearance correction: preserve the original TIFF appearance. Brightness and contrast stay at 0, gamma at 1, opacity at 100%, alpha band 4, and RGB channel stretching is disabled. This supersedes every earlier enhanced-display preset; it does not alter the source pixels.
 
 2026-09-25 review integrity (1.18): Completed rasters validate against their frozen evidence, preserving their original renderer and software provenance. New approvals and warps still require current inputs and software. Archive validation may preserve withdrawn results but must never authorize their import. Sheets 486, 487, 493 and 494 require a fresh original-1958-topo packet with at least three independent checks before approval, finishing or import. Reopening retires active queue links while retaining historical evidence; failed archives restore originals and remove partial copies only after verified recovery.
+
+2026-09-25 retained variants (1.19): An explicitly requested existing full/alpha pair needs a local schema-1 preservation record passed with `--preserve-existing-variants`. Bind both canonical paths and SHA-256 hashes, distinct full/alpha roles, approver and note. Live preflight requires exactly those two registrations and tree nodes, already in the Sanborn group; extra copies, changed evidence, or importing that same tile still fail. This permits coexistence only, not geographic certification. Live sheet495 import passed with both corrected486 variants intact, original neutral style and protected project unsaved.

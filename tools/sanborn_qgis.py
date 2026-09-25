@@ -632,10 +632,58 @@ def load_manifests(paths: Iterable[Path]) -> list[dict[str, Any]]:
     return [by_tile[tile] for tile in sorted(by_tile)]
 
 
-def build_plan(manifests: Iterable[Path]) -> dict[str, Any]:
+def load_preserved_variant_pair(path: Path) -> dict[str, Any]:
+    """Bind an explicit decision to keep two existing full/alpha raster variants.
+
+    This permits coexistence only; it never certifies geography or authorizes
+    adding/replacing either variant through the verified-sheet import route.
+    """
+    record_path = path.expanduser().resolve()
+    try:
+        record_digest = sha256(record_path)
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        _fail(f"Cannot read existing-variant preservation record {record_path}: {exc}")
+    if not isinstance(record, dict) or record.get("schema_version") != 1 or record.get("purpose") != "preserve-existing-full-alpha-pair":
+        _fail("Existing-variant preservation requires schema 1 and purpose preserve-existing-full-alpha-pair")
+    tile = record.get("tile")
+    if not isinstance(tile, int) or isinstance(tile, bool) or tile <= 0:
+        _fail("Existing-variant preservation requires a positive printed tile number")
+    for field in ("approved_by", "note"):
+        if not isinstance(record.get(field), str) or not record[field].strip():
+            _fail(f"Existing-variant preservation requires a nonblank {field}")
+    variants = record.get("variants")
+    if not isinstance(variants, list) or len(variants) != 2:
+        _fail("Preserve exactly one full raster and one alpha sibling")
+    checked = {}
+    for variant in variants:
+        if not isinstance(variant, dict) or variant.get("role") not in {"full", "alpha"} or variant["role"] in checked:
+            _fail("Existing variants must have distinct full and alpha roles")
+        raster = _absolute_file(variant, "path", record_path, "existing raster variant")
+        digest = _required_sha256(variant, "sha256", record_path)
+        if tile_number_from_name(raster.name) != tile:
+            _fail("Existing variant source filename does not match the recorded tile")
+        if sha256(raster) != digest:
+            _fail("Existing raster variant changed after the preservation decision")
+        checked[variant["role"]] = {"role": variant["role"], "path": str(raster), "sha256": digest}
+    full, alpha = Path(checked["full"]["path"]), Path(checked["alpha"]["path"])
+    if full.suffix.lower() not in {".tif", ".tiff"} or alpha != full.with_name(full.stem + " alpha" + full.suffix):
+        _fail("The alpha variant must be the same-folder full raster's named alpha sibling")
+    if sha256(record_path) != record_digest:
+        _fail("Existing-variant preservation record changed during validation")
+    return {"tile": tile, "record_path": str(record_path), "record_sha256": record_digest,
+            "approved_by": record["approved_by"], "note": record["note"],
+            "variants": [checked["full"], checked["alpha"]]}
+
+
+def build_plan(manifests: Iterable[Path], *, preserve_existing_variants: Path | None = None) -> dict[str, Any]:
     """Create the complete, serializable dry-run plan."""
     tiles = load_manifests(manifests)
+    preserved = [load_preserved_variant_pair(preserve_existing_variants)] if preserve_existing_variants else []
+    if any(item["tile"] == pair["tile"] for item in tiles for pair in preserved):
+        _fail("Cannot import a tile whose existing full/alpha pair is being preserved")
     return {
+        "preserved_existing_variants": preserved,
         "schema_version": 1,
         "mode": "qgis-layer-preparation",
         "protected_project": str(PROTECTED_PROJECT),
@@ -809,8 +857,29 @@ def _sanborn_source_filename_tile(layer):
     return _sanborn_tile_number(os.path.basename(_sanborn_layer_source(layer)))
 
 
+def _sanborn_preserved_variant_pairs():
+    pairs = {}
+    for record in PLAN.get("preserved_existing_variants", []):
+        tile = int(record["tile"])
+        if tile in pairs:
+            _sanborn_fail("duplicate existing-variant preservation records")
+        evidence = [(record["record_path"], record["record_sha256"])]
+        evidence.extend((variant["path"], variant["sha256"]) for variant in record["variants"])
+        for path, digest in evidence:
+            if not os.path.isfile(path) or _sanborn_sha256(path) != digest:
+                _sanborn_fail("preserved existing-variant evidence changed: " + path)
+        paths = {_sanborn_canonical(variant["path"]) for variant in record["variants"]}
+        if len(paths) != 2 or len(record["variants"]) != 2:
+            _sanborn_fail("existing-variant preservation must identify two distinct raster paths")
+        pairs[tile] = paths
+    return pairs
+
+
 def _sanborn_check_group_contents(group, incoming):
+    preserved = _sanborn_preserved_variant_pairs()
     if group is None:
+        if preserved:
+            _sanborn_fail("the declared full/alpha pair is not already present in the Sanborn group")
         return
     seen = {}
     for node in group.children():
@@ -840,13 +909,20 @@ def _sanborn_check_group_contents(group, incoming):
                     node.name(), displayed_tile, source_tile
                 )
             )
-        if displayed_tile in seen:
-            _sanborn_fail(
-                "tile {} already occurs more than once in the group".format(displayed_tile)
-            )
-        seen[displayed_tile] = _sanborn_layer_source(layer)
+        seen.setdefault(displayed_tile, []).append(_sanborn_layer_source(layer))
+    for tile, paths in seen.items():
+        if len(paths) > 1 and (
+            tile in incoming or len(paths) != 2 or len(set(paths)) != 2
+            or set(paths) != preserved.get(tile)
+        ):
+            _sanborn_fail("tile {} already occurs more than once in the group".format(tile))
+    for tile, paths in preserved.items():
+        if tile in incoming:
+            _sanborn_fail("cannot import a tile whose existing full/alpha pair is being preserved")
+        if len(seen.get(tile, [])) != 2 or set(seen[tile]) != paths:
+            _sanborn_fail("the declared full/alpha pair is not already present in the Sanborn group")
     for tile, item in incoming.items():
-        if tile in seen and seen[tile] != _sanborn_canonical(item["path"]):
+        if tile in seen and seen[tile] != [_sanborn_canonical(item["path"])]:
             _sanborn_fail(
                 "tile {} already points to a different raster; refusing replacement".format(tile)
             )
@@ -896,6 +972,22 @@ def _sanborn_preflight_project_tiles(project, root, incoming):
                 "project layer-tree node {!r}".format(node.name()),
                 extra_name=node.name(),
             )
+
+    # An explicit preservation record allows exactly the two existing variants,
+    # not additional same-number layers or repeated nodes elsewhere in QGIS.
+    for tile, paths in _sanborn_preserved_variant_pairs().items():
+        registered = [layer for layer in project.mapLayers().values()
+                      if isinstance(layer, QgsRasterLayer)
+                      and tile in {_sanborn_tile_number(layer.name()), _sanborn_source_filename_tile(layer)}]
+        nodes = [node for node in root.findLayers()
+                 if _sanborn_tile_number(node.name()) == tile
+                 or (isinstance(node.layer(), QgsRasterLayer)
+                     and tile in {_sanborn_tile_number(node.layer().name()), _sanborn_source_filename_tile(node.layer())})]
+        if (len(registered) != 2 or {_sanborn_layer_source(layer) for layer in registered} != paths
+                or len(nodes) != 2
+                or any(not isinstance(node.layer(), QgsRasterLayer) for node in nodes)
+                or {_sanborn_layer_source(node.layer()) for node in nodes} != paths):
+            _sanborn_fail("preserved tile {} must have exactly one full and one alpha layer in the project".format(tile))
 
 
 def _sanborn_preflight_raster(project, item):
@@ -1166,8 +1258,10 @@ def _sanborn_apply_style(layer):
 
 
 def _sanborn_numeric_order(group):
+    # Recheck the exact preserved pair, including file hashes, before ordering.
+    # Sorting remains stable for the two intentional variants of one tile.
+    _sanborn_check_group_contents(group, {})
     numbered = []
-    seen = set()
     for node in group.children():
         if not isinstance(node, QgsLayerTreeLayer) or not isinstance(node.layer(), QgsRasterLayer):
             _sanborn_fail("only raster layer nodes may be placed in the Sanborn group")
@@ -1177,9 +1271,6 @@ def _sanborn_numeric_order(group):
         tile = _sanborn_tile_number(node.name())
         if tile is None:
             _sanborn_fail("cannot order group layer {!r} numerically".format(node.layer().name()))
-        if tile in seen:
-            _sanborn_fail("tile {} occurs more than once after import".format(tile))
-        seen.add(tile)
         numbered.append((tile, node.layer()))
     numbered.sort(key=lambda pair: pair[0])
     group.reorderGroupLayers([layer for _, layer in numbered])
@@ -1371,6 +1462,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("manifests", nargs="+", type=Path)
     parser.add_argument(
+        "--preserve-existing-variants", type=Path,
+        help="Local hash-bound decision preserving an already-loaded full/alpha pair; never imports that tile",
+    )
+    parser.add_argument(
         "--collection",
         default=sanborn_collections.DEFAULT_COLLECTION,
         choices=sorted(sanborn_collections.COLLECTIONS),
@@ -1405,7 +1500,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         args = parse_args(argv)
         collection = sanborn_collections.get(args.collection)
-        plan = build_plan(args.manifests)
+        plan = build_plan(args.manifests, preserve_existing_variants=args.preserve_existing_variants)
 
         # Take the dated copy before emitting anything that would change the
         # project. A dry run is only a printout, so it does not need one.
