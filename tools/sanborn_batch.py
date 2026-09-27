@@ -218,6 +218,76 @@ def require_program(name: str) -> str:
     return path
 
 
+# A trivial command that proves a program really starts. Finding it on PATH does
+# not: a toolchain can install cleanly and still abort in the dynamic loader, and
+# the two look identical from the outside. `gdal_edit.py` reports the GDAL
+# version and then exits nonzero by design, so it is judged by what it prints.
+RUNTIME_PROBES: dict[str, tuple[tuple[str, ...], str | None]] = {
+    "gdal_translate": (("--version",), None),
+    "gdalwarp": (("--version",), None),
+    "gdalinfo": (("--version",), None),
+    "gdal_edit.py": (("--version",), "GDAL"),
+    "tesseract": (("--version",), None),
+}
+LOADER_FAILURE_MARKERS = (
+    "dyld",
+    "library not loaded",
+    "symbol not found",
+    "image not found",
+    "cannot open shared object file",
+)
+PROBE_TIMEOUT_SECONDS = 30
+
+
+def verify_program_runs(name: str, path: str) -> str:
+    """Run one fast command so an unusable program is never called healthy.
+
+    Returns the first line the program reported, for the doctor listing.
+    """
+    probe = RUNTIME_PROBES.get(name)
+    if probe is None:
+        return ""
+    arguments, expected_report = probe
+    attempted = " ".join((name, *arguments))
+    try:
+        result = subprocess.run(
+            [path, *arguments],
+            check=False,
+            text=True,
+            errors="replace",
+            timeout=PROBE_TIMEOUT_SECONDS,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except subprocess.TimeoutExpired:
+        fail(
+            f"{name} is installed at {path} but cannot run: it did not answer "
+            f"'{attempted}' within {PROBE_TIMEOUT_SECONDS} seconds."
+        )
+    except OSError as error:
+        fail(f"{name} is installed at {path} but cannot run: {error}")
+    output = "\n".join(part for part in (result.stdout, result.stderr) if part).strip()
+    reported = output or "(no output)"
+    lowered = output.lower()
+    if any(marker in lowered for marker in LOADER_FAILURE_MARKERS):
+        fail(
+            f"{name} is installed at {path} but cannot run: the dynamic loader "
+            f"rejected it. '{attempted}' reported: {reported}"
+        )
+    if expected_report is not None:
+        if expected_report not in output:
+            fail(
+                f"{name} is installed at {path} but cannot run: "
+                f"'{attempted}' reported: {reported}"
+            )
+    elif result.returncode != 0:
+        fail(
+            f"{name} is installed at {path} but cannot run: '{attempted}' exited "
+            f"{result.returncode} and reported: {reported}"
+        )
+    return output.splitlines()[0].strip() if output else ""
+
+
 def connect(path: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(path, timeout=30.0)
@@ -1718,7 +1788,10 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         "tesseract",
         "clang",
     ):
-        print(f"{program}: {require_program(program)}")
+        path = require_program(program)
+        reported = verify_program_runs(program, path)
+        detail = f" ({reported})" if reported else ""
+        print(f"{program}: {path}{detail}")
     try:
         import PIL
         print(f"Pillow: {PIL.__version__}")

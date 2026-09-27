@@ -22,6 +22,27 @@ Use the master instruction manual in this folder as the operating source of trut
 
 ## Lessons learned
 
+### 2026-09-27 — Version 1.20, `doctor` runs the tools it reports
+
+- `doctor` now executes `--version` on `gdal_translate`, `gdalwarp`, `gdalinfo`,
+  `gdal_edit.py`, and `tesseract`, and prints the version each one reported, so a
+  healthy line is evidence the program actually started. A nonzero exit, a dynamic
+  loader rejection, a refusal to start, or no answer within 30 seconds stops
+  `doctor` with an ERROR line carrying that program's own text, the same way an
+  unavailable OpenCV already stops it. This closes the 2026-09-22 gap below.
+- `gdal_edit.py --version` prints the GDAL version and still exits 255 by design,
+  so it is judged by what it reports rather than by its exit status. Any other
+  probe would have to invent a throwaway raster to obtain a zero exit.
+- Finding a program with `shutil.which` proves only that a file sits on PATH. A
+  dependency check should run whatever it declares healthy.
+- Measured on this date: 183 engine tests pass in 66 seconds under the python.org
+  Python 3.12 with QGIS GDAL on PATH, real warps included and nothing skipped.
+  Homebrew GDAL is no longer installed on this Mac, so GDAL now comes from
+  `/Applications/QGIS.app/Contents/MacOS/bin`. OpenCV is absent from Homebrew
+  Python 3.13, which blocks `test_batch_safety`, `test_control_proposals`, and
+  `test_street_geometry` from loading there. Both are machine faults, not code
+  faults, and neither touches this change.
+
 ### 2026-09-22 — Version 1.16, `doctor` does not prove a tool runs
 
 - `doctor` reports GDAL healthy when `gdal_translate`, `gdalwarp`, `gdalinfo`, and

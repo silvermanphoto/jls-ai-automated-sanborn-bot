@@ -2,7 +2,7 @@
 
 Downloads the 1911 Atlanta Sanborn fire insurance maps from the Library of Congress, works
 out where each sheet belongs on the ground, and prepares it as a georeferenced layer for
-QGIS. Current system version: **1.19**.
+QGIS. Current system version: **1.20**.
 
 Historic Sanborn maps have been scanned and publicly readable for years without being
 georeferenced, so until GIS tools came along, historical study meant holding a picture of a map beside a real map. Even with GIS georeferencing, pinning an old map to a current map accurately takes hours per map.This repository holds a local system that automates the placement of Sanborns for Atlanta.
@@ -156,15 +156,16 @@ Two notes on the current Mac toolchain, both outside this repository:
   paths. Python 3.13 works.
 - Homebrew's `libheif` is linked against `libx265.216.dylib` while the `x265` symlink points at
   4.3, which ships `.217`. Every GDAL command aborts at launch until `brew reinstall libheif`
-  relinks it. `doctor` does not catch this, because it checks that the GDAL binaries exist on
-  PATH rather than that they run.
+  relinks it. From version 1.20 `doctor` catches this: it runs each GDAL program and Tesseract
+  instead of only finding them on PATH, and prints the loader's own message when one will not
+  start.
 
 ## Current state
 
 396 sheets are cataloged. Five have finished GeoTIFFs: 196, 236, 474, 486, and 487. The batch
 queue holds two verified sheets and three waiting on human street review.
 
-Version 1.19 passes all 174 engine tests, including real GDAL warping, embedded provenance,
+Version 1.20 passes all 183 engine tests, including real GDAL warping, embedded provenance,
 independent historical street checks, approval changes and QGIS rollback. The app selects one
 working GDAL installation and uses QGIS's matching coordinate definitions when Homebrew is
 unavailable. Tests create their small source fixture with Pillow, so they do not depend on the

@@ -24,7 +24,7 @@ Run these commands from the `AI AUTOMATED SANBORN BOT` project folder:
 
 They perform four different jobs:
 
-- `doctor` checks the local Python, GDAL command-line programs, Tesseract, Pillow, OpenCV, free disk space, and OSM-database status. The required GDAL programs include `gdal_edit.py`, which embeds source, controls, affine, and pipeline provenance inside each finished GeoTIFF; do not begin production if `doctor` reports it missing.
+- `doctor` checks the local Python, GDAL command-line programs, Tesseract, Pillow, OpenCV, free disk space, and OSM-database status. It runs each GDAL program and Tesseract rather than only finding them on PATH, and prints the version each one reported; a program that is installed but cannot start stops `doctor` with that program's own error text. The required GDAL programs include `gdal_edit.py`, which embeds source, controls, affine, and pipeline provenance inside each finished GeoTIFF; do not begin production if `doctor` reports it missing.
 - `catalog` caches the four official 1911 Atlanta Library of Congress volumes.
 - `osm-refresh` downloads a bounded Atlanta OSM extract and builds a local street-and-intersection database. Later, run it with `--replace` only when a deliberate OSM refresh is wanted.
 - `index-build` uses Apple's Vision recognizer entirely on the Mac. It reads overlapping crops of the georeferenced 1911 index, supports printed tiles through 549, clusters repeated readings, and converts them to approximate EPSG:3857 location safeguards.
