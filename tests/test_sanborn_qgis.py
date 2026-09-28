@@ -304,9 +304,24 @@ class FakeGroup:
         self._children.insert(index, node)
         node._parent = self
 
-    def reorderGroupLayers(self, layers):
-        nodes = {node.layerId(): node for node in self._children}
-        self._children = [nodes[layer.id()] for layer in layers]
+    def takeChild(self, node):
+        if node not in self._children:
+            return False
+        self.removeChildNode(node)
+        return True
+
+
+class FakeBridge:
+    def __init__(self, enabled=True):
+        self.enabled = enabled
+        self.states = []
+
+    def isEnabled(self):
+        return self.enabled
+
+    def setEnabled(self, enabled):
+        self.enabled = enabled
+        self.states.append(enabled)
 
 
 class FakeRoot(FakeGroup):
@@ -628,7 +643,9 @@ class SanbornQgisPlanTests(unittest.TestCase):
                 "brightness.setContrast",
                 "renderer.setOpacity",
                 "renderer.setAlphaBand",
-                "group.reorderGroupLayers",
+                "group.takeChild(node)",
+                "group.insertChildNode(position, node)",
+                "bridge.setEnabled(bridge_enabled)",
                 "group.setExpanded(True)",
                 "node.setExpanded(False)",
                 "_sanborn_restore_after_failure(project, root, rollback)",
@@ -637,6 +654,7 @@ class SanbornQgisPlanTests(unittest.TestCase):
             )
             for fragment in required_fragments:
                 self.assertIn(fragment, code)
+            self.assertNotIn("reorderGroupLayers", code)
             self.assertNotIn("QgsProject.write", code)
             self.assertNotIn("project.write(", code)
             self.assertNotIn("saveProject(", code)
@@ -734,10 +752,60 @@ class SanbornQgisPlanTests(unittest.TestCase):
             group.insertChildNode(0, FakeLayerNode(added))
             earlier = FakeRasterLayer("/tmp/Tile 236.tif", "Sanborn 1911 - tile 236", "earlier-236")
             group.insertChildNode(0, FakeLayerNode(earlier))
-            self.assertEqual(helpers["_sanborn_numeric_order"](group), [236, 486, 486, 495])
+            bridge = FakeBridge()
+            project.layerTreeRegistryBridge = lambda: bridge
+            project.mapLayers = lambda: {layer.id(): layer for layer in [*layers, added, earlier]}
+            original_nodes = list(group.children())
+            self.assertEqual(helpers["_sanborn_numeric_order"](project, group), [236, 486, 486, 495])
+            self.assertEqual(set(group.children()), set(original_nodes))
+            self.assertEqual(bridge.states, [False, True])
             helpers["_sanborn_check_group_contents"](group, incoming)
             self.assertEqual([node.layer() for node in group.children()][1:3], layers)
             self.assertEqual(sum(node.layerId() == "new-495" for node in group.children()), 1)
+
+    def test_numeric_order_restores_bridge_and_nodes_on_insert_failure(self):
+        for enabled in (True, False):
+            with self.subTest(enabled=enabled):
+                helpers = generated_helper_namespace()
+                layers = [FakeRasterLayer(f"/tmp/Tile {tile}.tif", f"Tile {tile}", str(tile))
+                          for tile in (495, 236)]
+                group = FakeGroup([FakeLayerNode(layer) for layer in layers])
+                original = list(group.children())
+                bridge = FakeBridge(enabled)
+                registry = {layer.id(): layer for layer in layers}
+                project = types.SimpleNamespace(mapLayers=lambda: registry,
+                                                layerTreeRegistryBridge=lambda: bridge)
+                insert = group.insertChildNode
+                def failing_insert(position, node):
+                    self.assertFalse(bridge.isEnabled())
+                    if position == 0:
+                        raise RuntimeError("insertion failed")
+                    insert(position, node)
+                group.insertChildNode = failing_insert
+                with self.assertRaisesRegex(RuntimeError, "insertion failed"):
+                    helpers["_sanborn_numeric_order"](project, group)
+                self.assertEqual(group.children(), original)
+                self.assertEqual(bridge.isEnabled(), enabled)
+                self.assertEqual(set(registry), {"495", "236"})
+
+    def test_numeric_order_rejects_registry_change_and_restores_bridge(self):
+        helpers = generated_helper_namespace()
+        layers = [FakeRasterLayer(f"/tmp/Tile {tile}.tif", f"Tile {tile}", str(tile))
+                  for tile in (495, 236)]
+        group = FakeGroup([FakeLayerNode(layer) for layer in layers])
+        bridge = FakeBridge()
+        registry = {layer.id(): layer for layer in layers}
+        project = types.SimpleNamespace(mapLayers=lambda: registry,
+                                        layerTreeRegistryBridge=lambda: bridge)
+        take = group.takeChild
+        def corrupting_take(node):
+            self.assertFalse(bridge.isEnabled())
+            registry.pop(node.layerId())
+            return take(node)
+        group.takeChild = corrupting_take
+        with self.assertRaisesRegex(RuntimeError, "layer registry changed"):
+            helpers["_sanborn_numeric_order"](project, group)
+        self.assertTrue(bridge.isEnabled())
 
     def test_pair_requires_explicit_record_and_rejects_extra_or_repeated_variants(self):
         for change in ("no-record", "third-variant", "same-path", "arbitrary-other-tile"):

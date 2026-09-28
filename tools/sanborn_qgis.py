@@ -1257,7 +1257,7 @@ def _sanborn_apply_style(layer):
     layer.triggerRepaint()
 
 
-def _sanborn_numeric_order(group):
+def _sanborn_numeric_order(project, group):
     # Recheck the exact preserved pair, including file hashes, before ordering.
     # Sorting remains stable for the two intentional variants of one tile.
     _sanborn_check_group_contents(group, {})
@@ -1271,9 +1271,34 @@ def _sanborn_numeric_order(group):
         tile = _sanborn_tile_number(node.name())
         if tile is None:
             _sanborn_fail("cannot order group layer {!r} numerically".format(node.layer().name()))
-        numbered.append((tile, node.layer()))
+        numbered.append((tile, node))
     numbered.sort(key=lambda pair: pair[0])
-    group.reorderGroupLayers([layer for _, layer in numbered])
+    # Move the existing nodes without deleting them or touching layer registry
+    # ownership. The bulk layer-list reorder crashes in QGIS 3.42.1.
+    registry_ids = set(project.mapLayers())
+    bridge = project.layerTreeRegistryBridge()
+    bridge_enabled = bridge.isEnabled()
+    bridge.setEnabled(False)
+    try:
+        for position, (_, node) in enumerate(numbered):
+            if group.children()[position] is node:
+                continue
+            original_position = group.children().index(node)
+            if not group.takeChild(node):
+                _sanborn_fail("could not detach Sanborn node for numeric ordering")
+            try:
+                group.insertChildNode(position, node)
+            except Exception:
+                # Retain a live node for the caller's existing full rollback.
+                if node.parent() is None:
+                    group.insertChildNode(original_position, node)
+                raise
+        if list(group.children()) != [node for _, node in numbered]:
+            _sanborn_fail("Sanborn numeric node ordering verification failed")
+    finally:
+        bridge.setEnabled(bridge_enabled)
+        if set(project.mapLayers()) != registry_ids:
+            _sanborn_fail("layer registry changed during Sanborn numeric ordering")
     return [tile for tile, _ in numbered]
 
 
@@ -1369,7 +1394,7 @@ def prepare_sanborn_layers():
             _sanborn_apply_style(layer)
             node.setExpanded(False)
 
-        order = _sanborn_numeric_order(group)
+        order = _sanborn_numeric_order(project, group)
         group.setExpanded(True)
         for node in group.children():
             node.setExpanded(False)

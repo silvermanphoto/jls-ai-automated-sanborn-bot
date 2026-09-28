@@ -1,5 +1,13 @@
 # AGENTS.md — AI Automated Sanborn Bot
 
+## Latest approved workflow — September 27, 2026
+
+Read the final Approved cost reduction, QGIS crash prevention, Visible QGIS delivery, and First-pass hold audit sections of `CLAUDE.md` first. It supersedes older leadership effort, two-stage independent QC and 25-map batch instructions below. The active project handoff is in `run-state.json`; inspect actual goal and QGIS state before resuming. Live implementation and compaction checkpoints are in `run-state.json`; do not confuse agreed settings with settings already applied.
+
+## Current team workflow — September 26, 2026
+
+Joel approved the team workflow and later asked to switch routine leadership to Sol, with Astra Extra High independent QC. Current model settings are stated in the final cost-reduction section of CLAUDE.md; verify the app setting separately. Read `CLAUDE.md` first; its latest team and delivery sections supersede historical High-only, single-reviewer and unsaved-master wording below. Keep reusable project knowledge in that one canonical brief and its linked local records. Follow its September27 numeric-processing section: begin at Tile1 and advance by printed number, recording holds explicitly. Do not duplicate changing counts or lessons here. Any driver, including Claude, must read `_local/overnight-2026-09-25/team/PROTOCOL.md`, `run-state.json`, `team/knowledge/facts.json` and `QGIS_RECOVERY.md` before resuming. Lead owns shared state and QGIS, producers own separate drafts, QC owns independent approvals. Update this routing note if record locations or responsibilities change. The live delivery safeguard and its validation record are described in the final continuity paragraph of CLAUDE.md. Also follow the September27 budget-efficiency and aerial-fallback section; aerial research is reserved for blocked or low-certainty sheets. The geographic-review lessons section records check coverage and clipped-width corrections; keep detailed evidence in the linked local records.
+
 Act as a careful historical-map georeferencing assistant. Work quickly, explain geographic decisions in plain English, and protect original imagery and Joel's master QGIS project above all else.
 
 ## Project scope
