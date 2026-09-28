@@ -4,6 +4,13 @@
 This intentionally automates only the deterministic part of the workflow. Street
 identity, control-point choice, and the OSM/Kauffman visual judgment remain human
 or agent decisions.
+
+Hard rule (Joel, 2026-09-28): every sheet is fitted with rotation + uniform scale +
+shift (a similarity fit, with the image y axis running down), least squares over
+all measured points. A three-point affine turns measuring error into skew and is
+never used to build a sheet. A sheet passes when its leave-one-out error (each
+point predicted from a fit to the others) is 15 m RMS or less, it has at least
+three measured points, and its scale is plausible (0.035-0.075 m per source pixel).
 """
 
 from __future__ import annotations
@@ -28,7 +35,21 @@ SOURCE_METADATA_KEY = "SANBORN_SOURCE_SHA256"
 POINTS_METADATA_KEY = "SANBORN_POINTS_SHA256"
 AFFINE_METADATA_KEY = "SANBORN_AFFINE_SIGNATURE"
 PIPELINE_METADATA_KEY = "SANBORN_PIPELINE"
-PIPELINE_METADATA_VALUE = "local-first-affine-v2"
+PIPELINE_METADATA_VALUE = "local-first-similarity-v3"
+# Rasters finished before 2026-09-28 were warped by a three-point affine. They are
+# only ever verified against their frozen evidence; nothing new is built that way.
+LEGACY_AFFINE_PIPELINE_VALUE = "local-first-affine-v2"
+LEGACY_AFFINE_TRANSFORMATION_TYPE = "Polynomial 1 / global affine"
+SIMILARITY_TRANSFORMATION_TYPE = (
+    "Similarity: rotation + uniform scale + shift, least squares over all measured points"
+)
+FIT_MODEL = "similarity"
+MIN_FIT_POINTS = 3
+MAX_LEAVE_ONE_OUT_RMS_METRES = 15.0
+MIN_METRES_PER_SOURCE_PIXEL = 0.035
+MAX_METRES_PER_SOURCE_PIXEL = 0.075
+SUSPICIOUS_SKEW_DEGREES = 1.0
+MAX_SKEW_DEGREES = 3.0
 _SHA256_CACHE: dict[tuple[str, int, int, int, int, int], str] = {}
 
 
@@ -146,8 +167,11 @@ def read_points(path: Path) -> tuple[str, list[dict[str, float | str]]]:
             }
         )
 
-    if len(controls) != 3:
-        fail(f"Exactly three enabled controls are required; found {len(controls)}.")
+    if len(controls) < MIN_FIT_POINTS:
+        fail(
+            f"At least {MIN_FIT_POINTS} enabled measured points are required; "
+            f"found {len(controls)}."
+        )
     return target_crs, controls
 
 
@@ -179,12 +203,14 @@ def triangle_area(points: list[tuple[float, float]]) -> float:
     ) / 2.0
 
 
-def affine_diagnostics(
+def legacy_affine_diagnostics(
     controls: list[dict[str, float | str]],
     source_width: int | None = None,
     source_height: int | None = None,
 ) -> dict[str, float | bool | list[list[float]]]:
-    """Measure the affine shape before GDAL can hide bad controls with zero residual."""
+    """Recompute a legacy three-point affine, only to verify rasters frozen before 2026-09-28."""
+    if len(controls) != 3:
+        fail("A legacy three-point affine record must contain exactly three controls.")
     source_points = [
         (float(control["source_x"]), float(control["source_line_gdal"]))
         for control in controls
@@ -242,6 +268,162 @@ def affine_diagnostics(
         "source_triangle_area_pixels2": source_area,
         "target_triangle_area_crs2": target_area,
         "source_triangle_coverage": coverage,
+        "source_x_span_fraction": x_span_fraction,
+        "source_y_span_fraction": y_span_fraction,
+    }
+
+
+def solve_similarity(
+    points: list[tuple[float, float, float, float]],
+) -> tuple[float, float, float, float]:
+    """Least-squares rotation + uniform scale + shift over every measured point.
+
+    Each point is (source_x, source_line, map_x, map_y), with the source line
+    running down the image. The model is
+        map_x = a * source_x + b * source_line + c
+        map_y = b * source_x - a * source_line + d
+    which is a GDAL geotransform [c, a, b, d, b, -a]. Skew is zero and the two
+    axis scales are equal by construction.
+    """
+    if len(points) < 2:
+        fail("A similarity fit needs at least two measured points.")
+    count = float(len(points))
+    mean_x = sum(point[0] for point in points) / count
+    mean_y = sum(point[1] for point in points) / count
+    mean_map_x = sum(point[2] for point in points) / count
+    mean_map_y = sum(point[3] for point in points) / count
+    spread = 0.0
+    numerator_a = 0.0
+    numerator_b = 0.0
+    for source_x, source_y, map_x, map_y in points:
+        x, y = source_x - mean_x, source_y - mean_y
+        tx, ty = map_x - mean_map_x, map_y - mean_map_y
+        spread += x * x + y * y
+        numerator_a += tx * x - ty * y
+        numerator_b += tx * y + ty * x
+    if spread < 1e-9:
+        fail("The measured source points coincide; a sheet fit needs separate points.")
+    a = numerator_a / spread
+    b = numerator_b / spread
+    c = mean_map_x - a * mean_x - b * mean_y
+    d = mean_map_y - b * mean_x + a * mean_y
+    if math.hypot(a, b) < 1e-15:
+        fail("The similarity fit collapses the sheet to a point.")
+    return a, b, c, d
+
+
+def similarity_geotransform(diagnostics: dict[str, object]) -> list[float]:
+    """GDAL geotransform [c, a, b, d, b, -a] for a similarity fit."""
+    matrix = diagnostics["matrix"]
+    offset = diagnostics["offset"]
+    return [
+        float(offset[0]),
+        float(matrix[0][0]),
+        float(matrix[0][1]),
+        float(offset[1]),
+        float(matrix[1][0]),
+        float(matrix[1][1]),
+    ]
+
+
+def ground_scale_factor(map_y: float) -> float:
+    """Ground metres per EPSG:3857 unit at this Web Mercator northing."""
+    latitude = 2.0 * math.atan(math.exp(map_y / 6378137.0)) - math.pi / 2.0
+    return math.cos(latitude)
+
+
+def _similarity_error(
+    params: tuple[float, float, float, float], point: tuple[float, float, float, float]
+) -> float:
+    a, b, c, d = params
+    source_x, source_y, map_x, map_y = point
+    return math.hypot(
+        a * source_x + b * source_y + c - map_x,
+        b * source_x - a * source_y + d - map_y,
+    )
+
+
+def leave_one_out_errors(
+    points: list[tuple[float, float, float, float]], ground_factor: float = 1.0
+) -> list[float]:
+    """Predict each point from a similarity fit to all the others."""
+    if len(points) < MIN_FIT_POINTS:
+        fail(f"Leave-one-out error needs at least {MIN_FIT_POINTS} measured points.")
+    errors: list[float] = []
+    for index, point in enumerate(points):
+        others = points[:index] + points[index + 1 :]
+        errors.append(_similarity_error(solve_similarity(others), point) * ground_factor)
+    return errors
+
+
+def fit_diagnostics(
+    controls: list[dict[str, float | str]],
+    source_width: int | None = None,
+    source_height: int | None = None,
+) -> dict[str, object]:
+    """Fit a sheet by similarity over all measured points and report its accuracy.
+
+    Distances are ground metres (EPSG:3857 units scaled by the cosine of the
+    points' mean latitude). The matrix/offset keys keep the source-pixel to map
+    convention used by the location checks.
+    """
+    if len(controls) < MIN_FIT_POINTS:
+        fail(
+            f"At least {MIN_FIT_POINTS} measured points are required to fit a sheet; "
+            f"found {len(controls)}."
+        )
+    points = [
+        (
+            float(control["source_x"]),
+            float(control["source_line_gdal"]),
+            float(control["map_x"]),
+            float(control["map_y"]),
+        )
+        for control in controls
+    ]
+    a, b, c, d = solve_similarity(points)
+    ground = ground_scale_factor(sum(point[3] for point in points) / len(points))
+    residuals = [_similarity_error((a, b, c, d), point) * ground for point in points]
+    leave_one_out = leave_one_out_errors(points, ground)
+    worst = max(range(len(leave_one_out)), key=lambda index: leave_one_out[index])
+    scale = math.hypot(a, b)
+    column_x = (a, b)
+    column_y = (b, -a)
+    cosine = (column_x[0] * column_y[0] + column_x[1] * column_y[1]) / (scale * scale)
+    axis_angle = math.degrees(math.acos(max(-1.0, min(1.0, cosine))))
+    x_span_fraction = None
+    y_span_fraction = None
+    if source_width and source_height:
+        x_span_fraction = (
+            max(point[0] for point in points) - min(point[0] for point in points)
+        ) / source_width
+        y_span_fraction = (
+            max(point[1] for point in points) - min(point[1] for point in points)
+        ) / source_height
+    determinant = -(a * a + b * b)
+    return {
+        "model": FIT_MODEL,
+        "point_count": len(points),
+        "matrix": [[a, b], [b, -a]],
+        "offset": [c, d],
+        "geotransform": [c, a, b, d, b, -a],
+        "determinant": determinant,
+        "unexpected_mirroring": determinant >= 0,
+        "singular_scales": [scale, scale],
+        "scale_ratio": 1.0,
+        "axis_angle_degrees": axis_angle,
+        "skew_degrees": abs(90.0 - axis_angle),
+        "rotation_degrees": math.degrees(math.atan2(b, a)),
+        "metres_per_source_pixel": scale * ground,
+        "ground_metres_per_crs_unit": ground,
+        "fit_residuals_ground_metres": residuals,
+        "fit_rms_ground_metres": math.sqrt(sum(e * e for e in residuals) / len(residuals)),
+        "leave_one_out_ground_metres": leave_one_out,
+        "leave_one_out_rms_ground_metres": math.sqrt(
+            sum(e * e for e in leave_one_out) / len(leave_one_out)
+        ),
+        "leave_one_out_max_ground_metres": max(leave_one_out),
+        "leave_one_out_worst_index": worst,
         "source_x_span_fraction": x_span_fraction,
         "source_y_span_fraction": y_span_fraction,
     }
@@ -427,7 +609,7 @@ def require_target_location(location: dict[str, object]) -> None:
         fail("Expected target location gate failed: " + "; ".join(warnings))
 
 
-def affine_safety_warnings(
+def legacy_affine_safety_warnings(
     diagnostics: dict[str, object],
     *,
     max_scale_ratio: float = 1.15,
@@ -437,7 +619,7 @@ def affine_safety_warnings(
     min_x_span_fraction: float = 0.20,
     min_y_span_fraction: float = 0.20,
 ) -> list[str]:
-    """Return every reason these three controls are unsafe for a final affine warp."""
+    """Legacy affine gates, used only to verify rasters frozen before 2026-09-28."""
     warnings: list[str] = []
     if float(diagnostics["scale_ratio"]) > max_scale_ratio:
         warnings.append(
@@ -476,7 +658,7 @@ def affine_safety_warnings(
     return warnings
 
 
-def split_affine_safety_warnings(warnings: list[str]) -> tuple[list[str], list[str]]:
+def split_fit_safety_warnings(warnings: list[str]) -> tuple[list[str], list[str]]:
     """Separate historic shape distortion from never-overridable control failures."""
     overridable_prefixes = ("scale ratio ", "axis angle ")
     overridable = [
@@ -484,6 +666,94 @@ def split_affine_safety_warnings(warnings: list[str]) -> tuple[list[str], list[s
     ]
     hard = [warning for warning in warnings if warning not in overridable]
     return overridable, hard
+
+
+def fit_safety_warnings(
+    diagnostics: dict[str, object],
+    *,
+    min_points: int = MIN_FIT_POINTS,
+    max_leave_one_out_rms: float = MAX_LEAVE_ONE_OUT_RMS_METRES,
+    min_metres_per_pixel: float = MIN_METRES_PER_SOURCE_PIXEL,
+    max_metres_per_pixel: float = MAX_METRES_PER_SOURCE_PIXEL,
+    max_skew: float = MAX_SKEW_DEGREES,
+) -> list[str]:
+    """Return every reason a similarity-fitted sheet fails Joel's pass test.
+
+    None of these can be overridden: a sheet either predicts its own measured
+    points to within the limit at a plausible scale, or its points need fixing.
+    """
+    warnings: list[str] = []
+    if diagnostics.get("model") != FIT_MODEL:
+        warnings.append("the sheet was not fitted by rotation + uniform scale + shift")
+        return warnings
+    count = int(diagnostics["point_count"])
+    if count < min_points:
+        warnings.append(
+            f"only {count} measured points; at least {min_points} are required"
+        )
+    loo_rms = float(diagnostics["leave_one_out_rms_ground_metres"])
+    if loo_rms > max_leave_one_out_rms:
+        warnings.append(
+            f"leave-one-out error {loo_rms:.2f} m RMS exceeds {max_leave_one_out_rms:.2f} m"
+        )
+    scale = float(diagnostics["metres_per_source_pixel"])
+    if not min_metres_per_pixel <= scale <= max_metres_per_pixel:
+        warnings.append(
+            f"scale {scale:.4f} m per source pixel is outside the plausible "
+            f"{min_metres_per_pixel:.3f}-{max_metres_per_pixel:.3f} m range"
+        )
+    skew = float(diagnostics["skew_degrees"])
+    if skew > max_skew:
+        warnings.append(f"skew {skew:.3f} degrees exceeds {max_skew:.1f} degrees")
+    if bool(diagnostics["unexpected_mirroring"]):
+        warnings.append("the transform has an unexpected mirrored orientation")
+    location = diagnostics.get("target_location_check")
+    if isinstance(location, dict):
+        warnings.extend(target_location_warnings(location))
+    return warnings
+
+
+def fit_safety_limits(
+    expected_crs: str = "EPSG:3857",
+    expected_target_bbox: list[float] | None = None,
+    expected_target_seed: list[float] | None = None,
+    max_target_seed_distance: float = 0.0,
+) -> dict[str, object]:
+    """The recorded pass test, bound into every new ledger and signature."""
+    return {
+        "fit_model": FIT_MODEL,
+        "min_points": MIN_FIT_POINTS,
+        "max_leave_one_out_rms_metres": MAX_LEAVE_ONE_OUT_RMS_METRES,
+        "metres_per_source_pixel": [MIN_METRES_PER_SOURCE_PIXEL, MAX_METRES_PER_SOURCE_PIXEL],
+        "max_skew_degrees": MAX_SKEW_DEGREES,
+        "expected_crs": expected_crs,
+        "expected_target_bbox": expected_target_bbox,
+        "expected_target_seed": expected_target_seed,
+        "max_target_seed_distance": max_target_seed_distance,
+    }
+
+
+def write_similarity_vrt(
+    gdal_translate: str,
+    source: Path,
+    target_crs: str,
+    diagnostics: dict[str, object],
+    vrt: Path,
+) -> None:
+    """Give the scan its similarity geotransform in a VRT, for a gdalwarp without -order."""
+    run(
+        [
+            gdal_translate, "-q", "-of", "VRT", "-a_srs", target_crs,
+            "-a_ullr", "0", "0", "1", "1", str(source), str(vrt),
+        ]
+    )
+    geotransform = similarity_geotransform(diagnostics)
+    text = vrt.read_text(encoding="utf-8")
+    replacement = "<GeoTransform>" + ", ".join(repr(value) for value in geotransform) + "</GeoTransform>"
+    text, replaced = re.subn(r"<GeoTransform>[^<]*</GeoTransform>", replacement, text)
+    if replaced != 1:
+        fail("The temporary VRT has no single geotransform to replace.")
+    vrt.write_text(text, encoding="utf-8")
 
 
 def require_expected_crs(target_crs: str, expected_crs: str = "EPSG:3857") -> None:
@@ -497,8 +767,9 @@ def require_expected_crs(target_crs: str, expected_crs: str = "EPSG:3857") -> No
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Turn one source scan plus one verified three-point QGIS control file "
-            "into a lossless, transparent GeoTIFF and a verification ledger."
+            "Turn one source scan plus one verified QGIS points file (three or more "
+            "measured points) into a lossless, transparent GeoTIFF fitted by rotation, "
+            "uniform scale and shift, with a verification ledger."
         )
     )
     parser.add_argument("--source", required=True, type=Path, help="Read-only source scan")
@@ -513,13 +784,13 @@ def parse_args() -> argparse.Namespace:
         "--confidence",
         choices=("three-osm", "osm-kauffman-assisted"),
         default="three-osm",
-        help="Evidence level for the three controls",
+        help="Evidence level for the measured points",
     )
     parser.add_argument(
         "--control-label",
         action="append",
         default=[],
-        help="Repeat exactly three times to record the named intersections",
+        help="Repeat once per measured point, in file order, to record the named intersections",
     )
     parser.add_argument("--quality-note", default="", help="Short historical or QA note")
     parser.add_argument(
@@ -527,12 +798,6 @@ def parse_args() -> argparse.Namespace:
         type=float,
         help="Optional target pixel size in CRS units; omit to preserve normal full resolution",
     )
-    parser.add_argument("--max-scale-ratio", type=float, default=1.15)
-    parser.add_argument("--min-axis-angle", type=float, default=85.0)
-    parser.add_argument("--max-axis-angle", type=float, default=95.0)
-    parser.add_argument("--min-triangle-coverage", type=float, default=0.02)
-    parser.add_argument("--min-x-span-fraction", type=float, default=0.20)
-    parser.add_argument("--min-y-span-fraction", type=float, default=0.20)
     parser.add_argument(
         "--expected-crs",
         default="EPSG:3857",
@@ -544,7 +809,7 @@ def parse_args() -> argparse.Namespace:
         type=float,
         metavar=("MIN_X", "MIN_Y", "MAX_X", "MAX_Y"),
         help=(
-            "Optional permitted EPSG:3857 neighborhood containing all three target controls"
+            "Optional permitted EPSG:3857 neighborhood containing every measured target point"
         ),
     )
     parser.add_argument(
@@ -563,11 +828,6 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Allowed CRS-unit distance from the expected seed to the transformed footprint"
         ),
-    )
-    parser.add_argument(
-        "--allow-distortion",
-        action="store_true",
-        help="Proceed despite affine shape warnings; requires documented historical evidence",
     )
     return parser.parse_args()
 
@@ -614,8 +874,6 @@ def main() -> int:
         fail(f"The protected QGIS project does not exist: {protected}")
     if args.pixel_size is not None and args.pixel_size <= 0:
         fail("Pixel size must be greater than zero.")
-    if args.control_label and len(args.control_label) != 3:
-        fail("Use --control-label exactly three times, or omit it entirely.")
     if args.max_target_seed_distance < 0:
         fail("--max-target-seed-distance cannot be negative.")
     if args.max_target_seed_distance and not args.expected_target_seed:
@@ -635,8 +893,13 @@ def main() -> int:
         line = float(control["source_line_gdal"])
         if not (0 <= x < source_width and 0 <= line < source_height):
             fail(f"A control lies outside the {source_width} x {source_height} source image.")
+    if args.control_label and len(args.control_label) != len(controls):
+        fail(
+            f"Use --control-label once for each of the {len(controls)} measured points, "
+            "or omit it entirely."
+        )
 
-    diagnostics = affine_diagnostics(controls, source_width, source_height)
+    diagnostics = fit_diagnostics(controls, source_width, source_height)
     location_check = target_location_diagnostics(
         controls,
         diagnostics,
@@ -648,39 +911,16 @@ def main() -> int:
     )
     diagnostics["target_location_check"] = location_check
     require_target_location(location_check)
-    warnings = affine_safety_warnings(
-        diagnostics,
-        max_scale_ratio=args.max_scale_ratio,
-        min_axis_angle=args.min_axis_angle,
-        max_axis_angle=args.max_axis_angle,
-        min_triangle_coverage=args.min_triangle_coverage,
-        min_x_span_fraction=args.min_x_span_fraction,
-        min_y_span_fraction=args.min_y_span_fraction,
-    )
-    distortion_warnings, hard_warnings = split_affine_safety_warnings(warnings)
-    if hard_warnings:
-        fail("Affine hard safety gate failed: " + "; ".join(hard_warnings))
-    if distortion_warnings and not args.allow_distortion:
-        fail("Affine safety gate failed: " + "; ".join(distortion_warnings))
-    if args.allow_distortion and not distortion_warnings:
-        fail(
-            "--allow-distortion only applies to scale-ratio or axis-angle warnings; "
-            "these controls have no such warning."
-        )
-    if args.allow_distortion and not args.quality_note:
-        fail("--allow-distortion also requires a --quality-note explaining the exception.")
+    warnings = fit_safety_warnings(diagnostics)
+    if warnings:
+        fail("Sheet fit safety gate failed: " + "; ".join(warnings))
 
-    safety_limits = {
-        "max_scale_ratio": args.max_scale_ratio,
-        "axis_angle_degrees": [args.min_axis_angle, args.max_axis_angle],
-        "min_triangle_coverage": args.min_triangle_coverage,
-        "min_x_span_fraction": args.min_x_span_fraction,
-        "min_y_span_fraction": args.min_y_span_fraction,
-        "expected_crs": args.expected_crs,
-        "expected_target_bbox": args.expected_target_bbox,
-        "expected_target_seed": args.expected_target_seed,
-        "max_target_seed_distance": args.max_target_seed_distance,
-    }
+    safety_limits = fit_safety_limits(
+        args.expected_crs,
+        args.expected_target_bbox,
+        args.expected_target_seed,
+        args.max_target_seed_distance,
+    )
     affine_signature = affine_provenance_signature(
         source_sha256_before,
         points_sha256_before,
@@ -695,26 +935,13 @@ def main() -> int:
 
     try:
         with tempfile.TemporaryDirectory(prefix="sanborn-georef-") as temp_dir:
-            vrt = Path(temp_dir) / "source-with-controls.vrt"
-            translate_command = [gdal_translate, "-q", "-of", "VRT", "-a_srs", target_crs]
-            for control in controls:
-                translate_command.extend(
-                    [
-                        "-gcp",
-                        str(control["source_x"]),
-                        str(control["source_line_gdal"]),
-                        str(control["map_x"]),
-                        str(control["map_y"]),
-                    ]
-                )
-            translate_command.extend([str(source), str(vrt)])
-            run(translate_command)
+            vrt = Path(temp_dir) / "source-with-similarity.vrt"
+            write_similarity_vrt(gdal_translate, source, target_crs, diagnostics, vrt)
 
+            # No -order: the VRT already carries the exact similarity geotransform.
             warp_command = [
                 gdalwarp,
                 "-q",
-                "-order",
-                "1",
                 "-t_srs",
                 target_crs,
                 "-r",
@@ -829,12 +1056,14 @@ def main() -> int:
                 "confidence": args.confidence,
             },
             "transformation": {
-                "type": "Polynomial 1 / global affine",
+                "type": SIMILARITY_TRANSFORMATION_TYPE,
+                "fit_model": FIT_MODEL,
+                "pipeline": PIPELINE_METADATA_VALUE,
                 "target_crs": target_crs,
                 "resampling": "cubic",
                 "diagnostics": diagnostics,
                 "warnings": warnings,
-                "distortion_override": bool(args.allow_distortion),
+                "distortion_override": False,
                 "safety_limits": safety_limits,
                 "affine_provenance_signature": affine_signature,
             },
@@ -888,9 +1117,11 @@ def main() -> int:
         print(f"Verification ledger: {ledger}")
         print(f"Size: {output_width} x {output_height}; bands: Red, Green, Blue, Alpha")
         print(
-            "Affine diagnostics: "
-            f"scale ratio {diagnostics['scale_ratio']:.4f}; "
-            f"axis angle {diagnostics['axis_angle_degrees']:.3f} degrees"
+            "Similarity fit (rotation + uniform scale + shift, zero skew): "
+            f"{diagnostics['point_count']} points; leave-one-out "
+            f"{diagnostics['leave_one_out_rms_ground_metres']:.2f} m RMS; "
+            f"{diagnostics['metres_per_source_pixel']:.4f} m per source pixel; "
+            f"rotation {diagnostics['rotation_degrees']:.2f} degrees"
         )
         print(f"SHA-256: {record['output']['sha256']}")
         if protected:

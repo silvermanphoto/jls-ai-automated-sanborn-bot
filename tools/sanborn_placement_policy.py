@@ -5,6 +5,8 @@ import json
 import math
 from pathlib import Path
 
+from sanborn_georeference import MAX_LEAVE_ONE_OUT_RMS_METRES, MIN_FIT_POINTS
+
 SUPERSEDED_TILES = frozenset({486, 487, 493, 494})
 REQUIRED_REFERENCE = "washington-rawson-topo-1958"
 
@@ -15,12 +17,15 @@ def require_current_placement_evidence(tile: int, review: dict) -> None:
     Archival integrity does not restore withdrawn geographic approval. These
     sheets need new original-topo measurements and withheld checks, bound into
     the reviewed packet. A note or a manifest flag cannot override this gate.
+    The pass test is Joel's 2026-09-28 rule: at least three measured points and a
+    leave-one-out error of 15 m RMS or less under the rotate-scale-shift fit.
     """
     if tile not in SUPERSEDED_TILES:
         return
     reason = (f"Tile {tile}'s earlier placement is superseded. Reopen to review-ready "
               "and build and approve a fresh comparison against the 1958 original "
-              "topographic map with three independent street checks before import or finishing.")
+              "topographic map (at least three measured street corners, leave-one-out error "
+              "15 m RMS or less) before import or finishing.")
     provenance = review.get("provenance", {})
     evidence_record = provenance.get("historical_evidence")
     if not isinstance(evidence_record, dict):
@@ -40,9 +45,9 @@ def require_current_placement_evidence(tile: int, review: dict) -> None:
             or provenance.get("historical_reference") != evidence.get("reference")
             or provenance.get("historical_measurement_preview") != evidence.get("reference_preview")
             or evidence.get("current_source", {}).get("sha256") != review.get("source", {}).get("sha256")
-            or checks.get("count", 0) < 3
-            or checks.get("rms_ground_metres", float("inf")) > 5
-            or checks.get("max_ground_metres", float("inf")) > 10
+            or checks.get("method") != "leave-one-out"
+            or checks.get("count", 0) < MIN_FIT_POINTS
+            or checks.get("rms_ground_metres", float("inf")) > MAX_LEAVE_ONE_OUT_RMS_METRES
             or not {"historical_reference", "historical_overlay"}.issubset(review.get("artifacts", {}))
             or review.get("render_spec", {}).get("historical_reference", {}).get("independent_checks") != checks):
         raise RuntimeError(reason)

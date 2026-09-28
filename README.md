@@ -2,7 +2,7 @@
 
 Downloads the 1911 Atlanta Sanborn fire insurance maps from the Library of Congress, works
 out where each sheet belongs on the ground, and prepares it as a georeferenced layer for
-QGIS. Current system version: **1.22**.
+QGIS. Current system version: **1.23**.
 
 Historic Sanborn maps have been scanned and publicly readable for years without being
 georeferenced, so until GIS tools came along, historical study meant holding a picture of a map beside a real map. Even with GIS georeferencing, pinning an old map to a current map accurately takes hours per map.This repository holds a local system that automates the placement of Sanborns for Atlanta.
@@ -57,9 +57,9 @@ the engine is restricted to sources decided in advance and records where each on
 - A sheet's printed number is proven only by an exact Apple Vision reading of a printed title
   corner. Whole-sheet Tesseract readings stay suggestions and need confirmation.
 - Every finished sheet gets a sidecar ledger recording the source SHA-256 and pixel dimensions,
-  the three control points and how they were resolved, the transformation (Polynomial 1 global
-  affine, EPSG:3857, cubic resampling), the distortion diagnostics, the safety limits it was
-  tested against, and an affine provenance signature. The finished GeoTIFF embeds the same
+  every measured point and how it was resolved, the transformation (rotation + uniform scale +
+  shift, least squares over all points, EPSG:3857, cubic resampling), the leave-one-out error
+  and scale, the pass test it was held to, and a provenance signature. The finished GeoTIFF embeds the same
   evidence, so a rewritten ledger alone cannot certify a stale raster.
 
 The sheets were published in 1911 and are out of US copyright. The Kauffman map is in the
@@ -196,7 +196,8 @@ comes back.
 
 `tools/sanborn_historical.py prepare TILE --reference washington-rawson-topo-1958`
 builds source/reference previews for a prepared sheet. The typed app bridge supplies measurements
-to `export TILE` on standard input: three fit corners plus at least three withheld check corners.
+to `export TILE` on standard input: at least three measured corners in total, fit and check
+roles alike, all of which join one rotate-scale-shift fit judged by leave-one-out error (15 m RMS).
 It writes a reviewed control proposal, never approval. `sanborn_batch.py packet` accepts its
 `--historical-evidence` record, copies it into the immutable attempt and adds original-topo views
 to the existing comparison. Reference files, preview, measurements and check errors remain bound

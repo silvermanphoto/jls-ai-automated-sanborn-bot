@@ -11,8 +11,9 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 
 from sanborn_georeference import (
-    affine_diagnostics,
-    affine_safety_warnings,
+    fit_diagnostics,
+    fit_safety_limits,
+    fit_safety_warnings,
     require_expected_crs,
     require_target_location,
     target_location_diagnostics,
@@ -71,29 +72,32 @@ def centroid(points):
     ]
 
 
-class AffineSafetyTests(unittest.TestCase):
+class SheetFitSafetyTests(unittest.TestCase):
+    """Real historical triplets judged by the rotate-scale-shift fit (Joel, 2026-09-28)."""
+
     def test_rejected_tile_196_is_caught(self):
-        result = affine_diagnostics(
+        result = fit_diagnostics(
             controls([(785, 3220), (3560, 3460), (4030, 5740)], TILE_196_TARGETS),
             6665,
             7796,
         )
-        self.assertGreater(result["scale_ratio"], 1.15)
-        self.assertFalse(85 <= result["axis_angle_degrees"] <= 95)
+        warnings = fit_safety_warnings(result)
+        self.assertGreater(result["leave_one_out_rms_ground_metres"], 15)
+        self.assertTrue(any("leave-one-out error" in warning for warning in warnings))
 
     def test_corrected_tile_196_passes(self):
-        result = affine_diagnostics(
+        result = fit_diagnostics(
             controls([(1254, 4152), (3546, 3539), (4490, 6200)], TILE_196_TARGETS),
             6665,
             7796,
         )
-        self.assertLessEqual(result["scale_ratio"], 1.15)
-        self.assertTrue(85 <= result["axis_angle_degrees"] <= 95)
+        self.assertEqual(fit_safety_warnings(result), [])
         self.assertFalse(result["unexpected_mirroring"])
+        self.assertEqual(result["skew_degrees"], 0.0)
 
-    def test_accepted_tile_236_passes_shape_and_location_checks(self):
+    def test_accepted_tile_236_passes_fit_and_location_checks(self):
         tile_controls = controls(TILE_236_SOURCES, TILE_236_TARGETS)
-        result = affine_diagnostics(tile_controls, 6645, 7796)
+        result = fit_diagnostics(tile_controls, 6645, 7796)
         location = target_location_diagnostics(
             tile_controls,
             result,
@@ -103,13 +107,15 @@ class AffineSafetyTests(unittest.TestCase):
             expected_target_seed=centroid(TILE_236_TARGETS),
         )
         result["target_location_check"] = location
-        self.assertEqual(affine_safety_warnings(result), [])
+        self.assertEqual(fit_safety_warnings(result), [])
         self.assertTrue(location["passed"])
         self.assertEqual(target_location_warnings(location), [])
 
-    def test_accepted_tile_474_location_passes_without_hiding_existing_shape_warning(self):
+    def test_distorted_tile_474_triplet_fails_leave_one_out(self):
+        # This triplet once needed an affine distortion exception. Under a
+        # skew-free fit the three points disagree with each other by tens of metres.
         tile_controls = controls(TILE_474_SOURCES, TILE_474_TARGETS)
-        result = affine_diagnostics(tile_controls, 6605, 7795)
+        result = fit_diagnostics(tile_controls, 6605, 7795)
         location = target_location_diagnostics(
             tile_controls,
             result,
@@ -120,10 +126,8 @@ class AffineSafetyTests(unittest.TestCase):
         )
         result["target_location_check"] = location
         self.assertTrue(location["passed"])
-        self.assertEqual(target_location_warnings(location), [])
-        warnings = affine_safety_warnings(result)
-        self.assertTrue(any("scale ratio" in warning for warning in warnings))
-        self.assertTrue(any("axis angle" in warning for warning in warnings))
+        warnings = fit_safety_warnings(result)
+        self.assertTrue(any("leave-one-out error" in warning for warning in warnings))
 
     def test_uniformly_translated_triplet_is_rejected_by_location_gate(self):
         translated_targets = [
@@ -132,13 +136,13 @@ class AffineSafetyTests(unittest.TestCase):
         ]
         accepted_controls = controls(TILE_236_SOURCES, TILE_236_TARGETS)
         translated_controls = controls(TILE_236_SOURCES, translated_targets)
-        accepted = affine_diagnostics(accepted_controls, 6645, 7796)
-        translated = affine_diagnostics(translated_controls, 6645, 7796)
-        self.assertAlmostEqual(accepted["scale_ratio"], translated["scale_ratio"])
+        accepted = fit_diagnostics(accepted_controls, 6645, 7796)
+        translated = fit_diagnostics(translated_controls, 6645, 7796)
         self.assertAlmostEqual(
-            accepted["axis_angle_degrees"], translated["axis_angle_degrees"]
+            accepted["metres_per_source_pixel"], translated["metres_per_source_pixel"], places=4
         )
-        self.assertEqual(affine_safety_warnings(translated), [])
+        self.assertAlmostEqual(accepted["rotation_degrees"], translated["rotation_degrees"])
+        self.assertEqual(fit_safety_warnings(translated), [])
 
         location = target_location_diagnostics(
             translated_controls,
@@ -156,12 +160,12 @@ class AffineSafetyTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Expected target location gate failed"):
             require_target_location(location)
         self.assertTrue(
-            any("expected target bounding box" in warning for warning in affine_safety_warnings(translated))
+            any("expected target bounding box" in warning for warning in fit_safety_warnings(translated))
         )
 
     def test_location_diagnostics_are_recorded_when_gate_is_not_configured(self):
         tile_controls = controls(TILE_236_SOURCES, TILE_236_TARGETS)
-        result = affine_diagnostics(tile_controls, 6645, 7796)
+        result = fit_diagnostics(tile_controls, 6645, 7796)
         location = target_location_diagnostics(tile_controls, result, 6645, 7796)
         self.assertFalse(location["enabled"])
         self.assertIsNone(location["passed"])
@@ -175,59 +179,34 @@ class AffineSafetyTests(unittest.TestCase):
             (-9392912.153632404, 3996021.13214878),
             (-9393165.99546726, 3996023.287801004),
         ]
-        result = affine_diagnostics(
+        result = fit_diagnostics(
             controls([(2202, 1052), (6393, 5168), (2182, 5190)], target_points),
             6646,
             7795,
         )
-        self.assertAlmostEqual(result["scale_ratio"], 1.0203434, places=5)
-        self.assertAlmostEqual(result["axis_angle_degrees"], 88.8888, places=3)
+        self.assertEqual(fit_safety_warnings(result), [])
+        self.assertAlmostEqual(result["metres_per_source_pixel"], 0.0505, places=3)
         self.assertFalse(result["unexpected_mirroring"])
 
-    def test_collinear_source_points_are_rejected(self):
+    def test_coincident_source_points_are_rejected(self):
         with self.assertRaises(RuntimeError):
-            affine_diagnostics(
+            fit_diagnostics(
                 controls(
-                    [(0, 0), (10, 10), (20, 20)],
+                    [(10, 10), (10, 10), (10, 10)],
                     [(0, 0), (10, 10), (20, 20)],
                 )
             )
 
-    def test_clustered_controls_are_rejected_even_when_shape_is_square(self):
-        result = affine_diagnostics(
-            controls(
-                [(100, 100), (120, 100), (100, 120)],
-                [(0, 0), (20, 0), (0, -20)],
-            ),
-            10_000,
-            10_000,
-        )
-        warnings = affine_safety_warnings(result)
-        self.assertTrue(any("control triangle" in warning for warning in warnings))
-        self.assertTrue(any("scan width" in warning for warning in warnings))
-        self.assertTrue(any("scan height" in warning for warning in warnings))
-
-    def test_almost_collinear_controls_are_rejected(self):
-        source = [(0, 100), (5000, 100.001), (10000, 100.003)]
-        target = [(x, -y) for x, y in source]
-        result = affine_diagnostics(controls(source, target), 10_000, 10_000)
-        warnings = affine_safety_warnings(result)
-        self.assertTrue(any("control triangle" in warning for warning in warnings))
-        self.assertTrue(any("scan height" in warning for warning in warnings))
+    def test_fewer_than_three_points_cannot_be_fitted(self):
+        with self.assertRaisesRegex(RuntimeError, "At least 3"):
+            fit_diagnostics(controls([(0, 0), (100, 0)], [(0, 0), (5, 0)]))
 
     def test_wrong_crs_is_rejected_by_default(self):
         with self.assertRaises(RuntimeError):
             require_expected_crs("EPSG:4326")
 
     def test_approval_token_changes_when_an_input_file_changes(self):
-        limits = {
-            "max_scale_ratio": 1.15,
-            "axis_angle_degrees": [85.0, 95.0],
-            "min_triangle_coverage": 0.02,
-            "min_x_span_fraction": 0.20,
-            "min_y_span_fraction": 0.20,
-            "expected_crs": "EPSG:3857",
-        }
+        limits = fit_safety_limits("EPSG:3857")
         with tempfile.TemporaryDirectory() as temp:
             source = Path(temp) / "scan.jp2"
             points = Path(temp) / "controls.points"
@@ -263,14 +242,7 @@ class AffineSafetyTests(unittest.TestCase):
         self.assertNotEqual(changed_points, changed_source)
 
     def test_legacy_approval_without_local_artifacts_is_rejected(self):
-        limits = {
-            "max_scale_ratio": 1.15,
-            "axis_angle_degrees": [85.0, 95.0],
-            "min_triangle_coverage": 0.02,
-            "min_x_span_fraction": 0.20,
-            "min_y_span_fraction": 0.20,
-            "expected_crs": "EPSG:3857",
-        }
+        limits = fit_safety_limits("EPSG:3857")
         with tempfile.TemporaryDirectory() as temp:
             folder = Path(temp)
             source = folder / "scan.png"
@@ -284,10 +256,10 @@ class AffineSafetyTests(unittest.TestCase):
                 "0,-800,100,-900,1\n"
             )
             points.write_text(point_text, encoding="utf-8")
-            diagnostic = affine_diagnostics(
+            diagnostic = fit_diagnostics(
                 controls(
                     [(100, 100), (900, 100), (100, 900)],
-                    [(0, 0), (800, 0), (0, -800)],
+                    [(0, 0), (40, 0), (0, -40)],
                 ),
                 1000,
                 1000,

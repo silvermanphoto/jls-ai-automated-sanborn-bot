@@ -12,37 +12,60 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import sanborn_historical as historical
 from sanborn_review import create_packet, current_review_state, approve_packet, require_approval
-from test_review_packet import LocalReviewPacketTests, inverse_mercator
+from test_review_packet import UNIT, LocalReviewPacketTests, inverse_mercator
 
 class HistoricalMeasurementTests(unittest.TestCase):
     def setUp(self):
         self.source = {"width": 1000, "height": 1000}
+        # About 0.046 ground metres per pixel, square on the ground at Atlanta.
         self.reference = {"width": 1000, "height": 1000,
-            "geotransform": [-84.4, .000002, 0, 33.75, 0, -.000002]}
+            "geotransform": [-84.4, 5e-7, 0, 33.75, 0, -5e-7*math.cos(math.radians(33.75))]}
         pixels = [(100,100),(900,100),(100,900),(350,350),(800,700),(400,850)]
         self.rows = [{"label":f"Street {i} × Avenue {i}", "role":"fit" if i<3 else "check",
             "source_x":x,"source_y":y,"reference_x":x,"reference_y":y} for i,(x,y) in enumerate(pixels)]
 
-    def test_independent_checks_do_not_fit_the_transform(self):
+    def test_every_corner_joins_the_fit(self):
         fit = historical.assess_measurements(self.rows,self.source,self.reference)
-        self.rows[3]["reference_x"] += 5
+        self.rows[3]["reference_x"] += 50
         moved = historical.assess_measurements(self.rows,self.source,self.reference)
-        self.assertEqual(fit[2],moved[2])
+        # A "check" corner moves the fit too: nothing is withheld from least squares.
+        self.assertNotEqual(fit[2]["matrix"],moved[2]["matrix"])
         self.assertGreater(moved[3]["rms_ground_metres"],fit[3]["rms_ground_metres"])
-        self.assertEqual(moved[3]["count"],3)
+        self.assertEqual(moved[3]["count"],6)
+        self.assertEqual(moved[3]["method"],"leave-one-out")
+        self.assertEqual(len(moved[0]),6)
+        self.assertEqual(moved[2]["skew_degrees"],0.0)
+        self.assertEqual(moved[3]["worst_label"],self.rows[3]["label"])
 
-    def test_three_perfect_fit_points_are_insufficient(self):
-        with self.assertRaisesRegex(ValueError,"at least three"):
-            historical.assess_measurements(self.rows[:3],self.source,self.reference)
+    def test_three_corners_are_enough_and_two_are_not(self):
+        controls,checks,diagnostics,summary = historical.assess_measurements(self.rows[:3],self.source,self.reference)
+        self.assertEqual(len(controls),3)
+        self.assertEqual(checks,[])
+        self.assertLess(summary["rms_ground_metres"],0.5)
+        with self.assertRaisesRegex(ValueError,"at least 3"):
+            historical.assess_measurements(self.rows[:2],self.source,self.reference)
+
+    def test_two_fits_and_two_checks_are_fittable(self):
+        rows=[self.rows[0],self.rows[1],self.rows[3],self.rows[4]]
+        controls,checks,diagnostics,summary = historical.assess_measurements(rows,self.source,self.reference)
+        self.assertEqual(diagnostics["point_count"],4)
+        self.assertEqual([c["role"] for c in controls],["fit","fit","check","check"])
+        self.assertEqual(len(checks),2)
+        self.assertLess(summary["rms_ground_metres"],0.5)
+
+    def test_clustered_checks_are_allowed(self):
+        for i in range(3,6):
+            self.rows[i]["source_x"]=self.rows[i]["reference_x"]=500+10*i
+        historical.assess_measurements(self.rows,self.source,self.reference)
+
+    def test_wrong_corner_location_is_rejected(self):
+        self.rows[3]["reference_x"] = self.rows[3]["reference_y"] = 950
+        with self.assertRaisesRegex(ValueError,"predicted from the others misses"):
+            historical.assess_measurements(self.rows[:4],self.source,self.reference)
 
     def test_blank_coverage_cannot_supply_a_corner(self):
         with self.assertRaisesRegex(ValueError,"blank or undrawn"):
             historical.assess_measurements(self.rows,self.source,self.reference,coverage=lambda x,y:False)
-
-    def test_wrong_check_location_is_rejected(self):
-        self.rows[3]["reference_x"] += 200
-        with self.assertRaisesRegex(ValueError,"Withheld streets disagree"):
-            historical.assess_measurements(self.rows,self.source,self.reference)
 
     def test_nonfinite_or_out_of_bounds_coordinates_are_rejected(self):
         for value in (float("nan"),float("inf"),True,1001):
@@ -53,12 +76,6 @@ class HistoricalMeasurementTests(unittest.TestCase):
     def test_same_corner_cannot_be_a_fit_and_check(self):
         self.rows[3].update({k:self.rows[0][k] for k in ("source_x","source_y","reference_x","reference_y")})
         with self.assertRaisesRegex(ValueError,"different location"):
-            historical.assess_measurements(self.rows,self.source,self.reference)
-
-    def test_checks_must_span_the_sheet(self):
-        for i in range(3,6):
-            self.rows[i]["source_x"]=self.rows[i]["reference_x"]=500+i
-        with self.assertRaisesRegex(ValueError,"both directions"):
             historical.assess_measurements(self.rows,self.source,self.reference)
 
     def test_planned_roads_are_not_primary_controls(self):
@@ -121,11 +138,14 @@ class HistoricalPacketTests(LocalReviewPacketTests):
         gt=reference_info['geotransform']
         rows=[]
         for i,(x,y) in enumerate([(100,100),(900,100),(100,900),(350,350),(800,700),(400,850)]):
-            lon,lat=inverse_mercator(self.base_x+x-100,self.base_y-y+100)
+            lon,lat=inverse_mercator(self.base_x+(x-100)*UNIT,self.base_y-(y-100)*UNIT)
             rows.append({'label': f'Street {i} × Avenue {i}','role':'fit' if i<3 else 'check',
                 'source_x':x,'source_y':y,'reference_x':(lon-gt[0])/gt[1],'reference_y':(lat-gt[3])/gt[5]})
         source_info=historical.metadata(self.source)
         controls,checks,diagnostics,summary=historical.assess_measurements(rows,source_info,reference_info)
+        # Every measured corner, fit or check, is written to the control file.
+        self.points.write_text('#CRS: EPSG:3857\nmapX,mapY,sourceX,sourceY,enable\n'+''.join(
+            f"{p['map_x']:.15f},{p['map_y']:.15f},{p['source_x']:.6f},{-p['source_y']:.6f},1\n" for p in controls))
         record={'tile':486,'selection_origin':'historical-reference','reference_profile':historical.profile('washington-rawson-topo-1958'),
             'current_source':historical.file_record(self.source),'reference':historical.file_record(reference),
             'reference_preview':historical.file_record(preview),'measurements':rows,'source_info':source_info,
@@ -133,7 +153,7 @@ class HistoricalPacketTests(LocalReviewPacketTests):
             'independent_checks':summary}
         evidence=self.root/'historical-evidence.json';evidence.write_text(json.dumps(record))
         args=self._create_args();args.replace=True;args.historical_evidence=evidence
-        args.control_label=[row['label'] for row in rows[:3]]
+        args.control_label=[row['label'] for row in rows]
         seed=json.loads(args.target_seed_json);seed['tile']=486;args.target_seed_json=json.dumps(seed)
         # Synthetic reference has sparse grid ink. The dedicated coverage test above
         # verifies rejection; here bypass only that visual-content classifier.
@@ -141,7 +161,7 @@ class HistoricalPacketTests(LocalReviewPacketTests):
             create_packet(args)
             review=json.loads((self.review_dir/'review.json').read_text())
             self.assertIn('historical_overlay',review['artifacts'])
-            self.assertEqual(review['render_spec']['historical_reference']['independent_checks']['count'],3)
+            self.assertEqual(review['render_spec']['historical_reference']['independent_checks']['count'],6)
             from PIL import Image
             with Image.open(self.review_dir/'review-contact-sheet.png') as image:self.assertEqual(image.height,2112)
             current_review_state(review)

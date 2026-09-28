@@ -309,7 +309,7 @@ def _load_ledger(
     ]
     limits = transformation.get("safety_limits")
     if not isinstance(limits, dict):
-        _fail(f"{manifest}: georeference ledger has no affine safety limits")
+        _fail(f"{manifest}: georeference ledger has no fit safety limits")
     if not _same_number_list(limits.get("expected_target_seed"), [seed_x, seed_y]):
         _fail(f"{manifest}: ledger target seed differs from the selected index seed")
     if not _same_number_list(limits.get("expected_target_bbox"), expected_bbox):

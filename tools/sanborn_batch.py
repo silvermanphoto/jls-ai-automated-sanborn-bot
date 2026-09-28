@@ -37,13 +37,15 @@ from sanborn_georeference import (
     PIPELINE_METADATA_VALUE,
     POINTS_METADATA_KEY,
     SOURCE_METADATA_KEY,
-    affine_diagnostics,
+    FIT_MODEL,
+    SIMILARITY_TRANSFORMATION_TYPE,
     affine_provenance_signature,
-    affine_safety_warnings,
+    fit_diagnostics,
+    fit_safety_limits,
+    fit_safety_warnings,
     read_points,
     require_expected_crs,
     require_target_location,
-    split_affine_safety_warnings,
     target_location_diagnostics,
 )
 from sanborn_index import (
@@ -2692,7 +2694,7 @@ def _verify_final_pair(
     ledger: Path,
     approved_review: dict | None = None,
 ) -> dict:
-    """Recompute the approved affine and verify the live raster, not ledger claims."""
+    """Recompute the approved similarity fit and verify the live raster, not ledger claims."""
     if not output.is_file() or not ledger.is_file():
         fail("The final GeoTIFF and verification ledger must both exist.")
     try:
@@ -2744,8 +2746,8 @@ def _verify_final_pair(
         if not (0 <= x < source_width and 0 <= line < source_height):
             fail("An approved control now lies outside the source scan.")
     recorded_controls = points_record.get("controls")
-    if not isinstance(recorded_controls, list) or len(recorded_controls) != 3:
-        fail("The final ledger does not record exactly three controls.")
+    if not isinstance(recorded_controls, list) or len(recorded_controls) != len(controls):
+        fail("The final ledger does not record every measured point in the control file.")
     labels = validate_control_labels([control.get("label", "") for control in recorded_controls])
     numeric_keys = ("map_x", "map_y", "source_x", "source_y_qgis", "source_line_gdal")
     for live, stored in zip(controls, recorded_controls):
@@ -2755,8 +2757,8 @@ def _verify_final_pair(
             fail("The final ledger control coordinates differ from the live points file.")
     if approved_review is not None:
         approved_controls = approved_review.get("points", {}).get("controls")
-        if not isinstance(approved_controls, list) or len(approved_controls) != 3:
-            fail("The approved review packet does not contain exactly three controls.")
+        if not isinstance(approved_controls, list) or len(approved_controls) != len(controls):
+            fail("The approved review packet does not contain every measured point.")
         for stored, approved in zip(recorded_controls, approved_controls):
             if stored.get("label") != approved.get("label") or not all(
                 _same_structured_value(stored.get(key), approved.get(key)) for key in numeric_keys
@@ -2776,24 +2778,23 @@ def _verify_final_pair(
         seed_x + distance,
         seed_y + distance,
     ]
-    expected_limits = {
-        "max_scale_ratio": 1.15,
-        "axis_angle_degrees": [85.0, 95.0],
-        "min_triangle_coverage": 0.02,
-        "min_x_span_fraction": 0.20,
-        "min_y_span_fraction": 0.20,
-        "expected_crs": "EPSG:3857",
-        "expected_target_bbox": expected_bbox,
-        "expected_target_seed": [seed_x, seed_y],
-        "max_target_seed_distance": distance,
-    }
+    expected_limits = fit_safety_limits("EPSG:3857", expected_bbox, [seed_x, seed_y], distance)
     transformation = record.get("transformation", {})
     if str(transformation.get("target_crs", "")).upper() != "EPSG:3857":
         fail("The final output is not in required EPSG:3857.")
+    if (
+        transformation.get("type") != SIMILARITY_TRANSFORMATION_TYPE
+        or transformation.get("fit_model") != FIT_MODEL
+        or transformation.get("pipeline") != PIPELINE_METADATA_VALUE
+    ):
+        fail(
+            "The final output was not fitted by rotation + uniform scale + shift over "
+            "all measured points. Rebuild it."
+        )
     if not _same_structured_value(transformation.get("safety_limits"), expected_limits):
-        fail("The final ledger's affine safety limits differ from the required index-seed gates.")
+        fail("The final ledger's fit limits differ from the required pass test and index-seed gates.")
 
-    diagnostics = affine_diagnostics(controls, source_width, source_height)
+    diagnostics = fit_diagnostics(controls, source_width, source_height)
     location = target_location_diagnostics(
         controls,
         diagnostics,
@@ -2805,19 +2806,15 @@ def _verify_final_pair(
     )
     diagnostics["target_location_check"] = location
     require_target_location(location)
-    warnings = affine_safety_warnings(diagnostics)
-    distortion_warnings, hard_warnings = split_affine_safety_warnings(warnings)
-    if hard_warnings:
-        fail("Final affine hard safety gate failed: " + "; ".join(hard_warnings))
-    distortion_override = transformation.get("distortion_override") is True
-    if distortion_warnings and not distortion_override:
-        fail("The final affine has unapproved distortion: " + "; ".join(distortion_warnings))
-    if distortion_override and not distortion_warnings:
-        fail("The final ledger claims a distortion exception that the live controls do not need.")
+    warnings = fit_safety_warnings(diagnostics)
+    if warnings:
+        fail("Final sheet fit test failed: " + "; ".join(warnings))
+    if transformation.get("distortion_override") is not False:
+        fail("The final ledger claims a distortion exception; a similarity fit has none.")
     if transformation.get("warnings") != warnings:
-        fail("The final ledger's affine warnings differ from the live controls.")
+        fail("The final ledger's fit warnings differ from the live controls.")
     if not _same_structured_value(transformation.get("diagnostics"), diagnostics):
-        fail("The final ledger's affine diagnostics differ from the live controls.")
+        fail("The final ledger's fit diagnostics differ from the live controls.")
     affine_signature = affine_provenance_signature(
         source_digest,
         points_digest,
@@ -2826,7 +2823,7 @@ def _verify_final_pair(
         expected_limits,
     )
     if transformation.get("affine_provenance_signature") != affine_signature:
-        fail("The final ledger is not bound to the recomputed affine transform.")
+        fail("The final ledger is not bound to the recomputed sheet fit.")
 
     output_record = record.get("output", {})
     if Path(str(output_record.get("path", ""))).resolve() != output.resolve():
@@ -2888,7 +2885,7 @@ def _verify_final_pair(
         PIPELINE_METADATA_KEY: PIPELINE_METADATA_VALUE,
     }
     if any(embedded.get(key) != value for key, value in expected_embedded.items()):
-        fail("The live GeoTIFF is not internally bound to this source, controls, and affine.")
+        fail("The live GeoTIFF is not internally bound to this source, controls, and fit.")
     wkt = str(live_info.get("coordinateSystem", {}).get("wkt", ""))
     if 'ID["EPSG",3857]' not in wkt:
         fail("The final GeoTIFF does not currently report EPSG:3857.")
@@ -2917,7 +2914,7 @@ def _verify_final_pair(
         abs(float(actual) - float(expected)) > pixel_tolerance
         for actual, expected in zip(raster_bbox, footprint_bbox)
     ):
-        fail("The final GeoTIFF extent does not match the approved affine footprint.")
+        fail("The final GeoTIFF extent does not match the approved sheet footprint.")
 
     protected = record.get("protected_project", {})
     if Path(str(protected.get("path", ""))).resolve() not in {
@@ -3016,15 +3013,12 @@ def cmd_finish(args: argparse.Namespace) -> int:
             )
         allow_distortion = review_limits.get("allow_distortion") is True
         distortion_note = str(review_limits.get("distortion_note", "")).strip()
-        distortion_warnings = review_limits.get("distortion_warnings", [])
-        if allow_distortion and (not distortion_note or not distortion_warnings):
-            fail("The approved distortion exception is missing its note or warnings.")
+        if allow_distortion or distortion_note:
+            fail("A rotate-scale-shift fit has no distortion to accept; rebuild the packet.")
         quality_note = args.quality_note or (
             f"{approval['geographic_verification']['reference_method']}: "
             f"{approval['geographic_verification']['note']}"
         )
-        if allow_distortion:
-            quality_note += f" Distortion exception: {distortion_note}"
         command = [
             sys.executable,
             str(Path(__file__).with_name("sanborn_georeference.py")),
@@ -3040,8 +3034,6 @@ def cmd_finish(args: argparse.Namespace) -> int:
             quality_note,
         ]
         command.extend(_target_seed_command_args(row))
-        if allow_distortion:
-            command.append("--allow-distortion")
         for control in review["points"]["controls"]:
             command.extend(["--control-label", control.get("label", "Control")])
         if output.exists() != ledger.exists():
@@ -3059,10 +3051,8 @@ def cmd_finish(args: argparse.Namespace) -> int:
         else:
             subprocess.run(command, check=True)
             final_record = _verify_final_pair(row, output, ledger, approved_review=review)
-        if bool(final_record["transformation"].get("distortion_override")) != allow_distortion:
-            fail("The final warp's distortion setting differs from the approved review packet.")
-        if allow_distortion and distortion_note not in str(final_record.get("quality_note", "")):
-            fail("The final ledger does not carry the approved distortion explanation.")
+        if final_record["transformation"].get("distortion_override") is not False:
+            fail("The final warp claims a distortion exception; a similarity fit has none.")
         # Close the gap between the pre-warp approval check and final publish.
         # Any source, points, reference, artifact, or token change during a long
         # warp invalidates approval before a manifest or verified state exists.
@@ -3286,7 +3276,7 @@ def parse_args() -> argparse.Namespace:
     packet.add_argument(
         "--allow-distortion",
         action="store_true",
-        help="Allow a documented historic-sheet distortion in the hash-locked packet",
+        help="Retired: a rotate-scale-shift fit has no distortion to accept",
     )
     packet.add_argument(
         "--distortion-note",

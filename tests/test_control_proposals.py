@@ -26,12 +26,14 @@ from sanborn_georeference import read_points
 from sanborn_osm import import_osm
 
 
+# A 30 m street block across 600 source pixels: about 0.05 ground metres per pixel,
+# inside the plausible Sanborn scale range the sheet fit requires.
 GRID_OSM = """<?xml version="1.0" encoding="UTF-8"?>
 <osm version="0.6" generator="sanborn-control-test">
   <node id="1" lat="33.7510" lon="-84.3812" />
-  <node id="2" lat="33.7510" lon="-84.3800" />
-  <node id="3" lat="33.7500" lon="-84.3812" />
-  <node id="4" lat="33.7500" lon="-84.3800" />
+  <node id="2" lat="33.7510" lon="-84.380876" />
+  <node id="3" lat="33.75073" lon="-84.3812" />
+  <node id="4" lat="33.75073" lon="-84.380876" />
   <way id="10"><nd ref="1"/><nd ref="2"/><tag k="highway" v="primary"/><tag k="name" v="Auburn Avenue"/></way>
   <way id="11"><nd ref="3"/><nd ref="4"/><tag k="highway" v="primary"/><tag k="name" v="Edgewood Avenue"/></way>
   <way id="12"><nd ref="1"/><nd ref="3"/><tag k="highway" v="secondary"/><tag k="name" v="Jesse Hill Junior Drive"/></way>

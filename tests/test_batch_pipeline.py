@@ -19,12 +19,14 @@ import sanborn_batch
 from sanborn_osm import import_osm, web_mercator
 
 
+# A 30 m street block across 600 source pixels: about 0.05 ground metres per pixel,
+# inside the plausible Sanborn scale range the sheet fit requires.
 GRID_OSM = """<?xml version="1.0" encoding="UTF-8"?>
 <osm version="0.6" generator="sanborn-batch-test">
   <node id="1" lat="33.7510" lon="-84.3812" />
-  <node id="2" lat="33.7510" lon="-84.3800" />
-  <node id="3" lat="33.7500" lon="-84.3812" />
-  <node id="4" lat="33.7500" lon="-84.3800" />
+  <node id="2" lat="33.7510" lon="-84.380876" />
+  <node id="3" lat="33.75073" lon="-84.3812" />
+  <node id="4" lat="33.75073" lon="-84.380876" />
   <way id="10"><nd ref="1"/><nd ref="2"/><tag k="highway" v="primary"/><tag k="name" v="Auburn Avenue"/></way>
   <way id="11"><nd ref="3"/><nd ref="4"/><tag k="highway" v="primary"/><tag k="name" v="Edgewood Avenue"/></way>
   <way id="12"><nd ref="1"/><nd ref="3"/><tag k="highway" v="secondary"/><tag k="name" v="Jesse Hill Junior Drive"/></way>
@@ -537,7 +539,7 @@ class BatchPipelineTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        seed_x, seed_y = web_mercator(-84.3806, 33.7505)
+        seed_x, seed_y = web_mercator(-84.381038, 33.750865)
         index_json = self.folder / "tile-seeds.json"
         index_raster = self.folder / "proposal-index-evidence.tif"
         index_raster.write_bytes(b"stable proposal index evidence")

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Review historical street-center measurements without altering source maps or queue states.
 
-Three fit corners determine the affine transform. At least three other named
-corners measure its error independently. Historical reference coordinates remain
-historical evidence, never promoted to modern survey truth.
+Every measured street corner, fit or check alike, joins one least-squares
+rotation + uniform scale + shift (Joel's hard rule, 2026-09-28). The sheet is
+judged by leave-one-out error: each corner predicted from a fit to the others.
+Historical reference coordinates remain historical evidence, never promoted to
+modern survey truth.
 """
 from __future__ import annotations
 import argparse
@@ -22,8 +24,9 @@ import sys
 import tempfile
 from urllib.parse import quote
 from PIL import Image
-from sanborn_georeference import (affine_diagnostics, affine_safety_warnings,
-    split_affine_safety_warnings, sha256, capture_json, require_program, read_points)
+from sanborn_georeference import (MAX_LEAVE_ONE_OUT_RMS_METRES, MIN_FIT_POINTS,
+    fit_diagnostics, fit_safety_warnings, split_fit_safety_warnings, sha256,
+    capture_json, require_program, read_points)
 
 MAP_ROOT = Path('/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book')
 PROJECT_ROOT = Path(os.environ.get('SANBORN_PROJECT_ROOT', Path(__file__).resolve().parents[1])).resolve()
@@ -200,8 +203,8 @@ def drawn_coverage(preview, info, x, y):
 
 
 def assess_measurements(rows, source_info, reference_info, *, coverage=None):
-    if not isinstance(rows, list) or not 6 <= len(rows) <= 30:
-        fail('Choose three fit corners and at least three separate check corners.')
+    if not isinstance(rows, list) or not MIN_FIT_POINTS <= len(rows) <= 30:
+        fail(f'Measure at least {MIN_FIT_POINTS} street corners (and at most 30).')
     labels, controls, checks = set(), [], []
     source_points, target_points = [], []
     for i, row in enumerate(rows):
@@ -219,26 +222,26 @@ def assess_measurements(rows, source_info, reference_info, *, coverage=None):
         if any(math.hypot(sx-x, sy-y) < 3 for x,y in source_points) or any(math.hypot(rx-x, ry-y) < 3 for x,y in target_points):
             fail('Every fit and check corner must be a different location.')
         source_points.append((sx,sy)); target_points.append((rx,ry))
-        control = {'candidate_id': i+1, 'label': label, 'source_x': sx, 'source_y': sy,
+        if row.get('role') not in ('fit', 'check'):
+            fail('Each corner must be a fit or check corner.')
+        control = {'candidate_id': i+1, 'label': label, 'role': row['role'], 'source_x': sx, 'source_y': sy,
                    'source_line_gdal': sy, 'map_x': target[0], 'map_y': target[1],
                    'target_x': target[0], 'target_y': target[1], 'reference_x': rx, 'reference_y': ry}
-        (controls if row.get('role') == 'fit' else checks if row.get('role') == 'check' else []).append(control)
-    if len(controls) != 3 or len(checks) < 3 or len(controls)+len(checks) != len(rows):
-        fail('Exactly three corners fit the map; at least three others must be withheld checks.')
-    diagnostics = affine_diagnostics(controls, source_info['width'], source_info['height'])
-    for axis, dimension in [('source_x', 'width'), ('source_y', 'height')]:
-        if (max(c[axis] for c in checks)-min(c[axis] for c in checks)) / source_info[dimension] < .2:
-            fail('Spread the withheld check corners across both directions of the sheet.')
-    matrix, offset = diagnostics['matrix'], diagnostics['offset']
-    for check in checks:
-        x,y = check['source_x'],check['source_y']
-        predicted = [matrix[0][0]*x+matrix[0][1]*y+offset[0], matrix[1][0]*x+matrix[1][1]*y+offset[1]]
-        lat = 2*math.atan(math.exp(check['map_y']/6378137))-math.pi/2
-        check['ground_error_metres'] = math.hypot(predicted[0]-check['map_x'],predicted[1]-check['map_y'])*math.cos(lat)
-    errors=[p['ground_error_metres'] for p in checks]
-    summary={'count':len(checks),'rms_ground_metres':math.sqrt(sum(e*e for e in errors)/len(errors)), 'max_ground_metres':max(errors)}
-    if summary['rms_ground_metres'] > 5 or summary['max_ground_metres'] > 10:
-        fail(f"Withheld streets disagree by {summary['rms_ground_metres']:.1f} m RMS / {summary['max_ground_metres']:.1f} m maximum. Correct the corners before building a comparison.")
+        controls.append(control)
+    # Every corner joins the fit; "check" is only the role Joel gave it when measuring.
+    diagnostics = fit_diagnostics(controls, source_info['width'], source_info['height'])
+    for control, loo, residual in zip(controls, diagnostics['leave_one_out_ground_metres'], diagnostics['fit_residuals_ground_metres']):
+        control['leave_one_out_ground_metres'] = loo
+        control['fit_residual_ground_metres'] = residual
+    checks = [control for control in controls if control['role'] == 'check']
+    summary = {'method': 'leave-one-out', 'count': len(controls),
+               'rms_ground_metres': diagnostics['leave_one_out_rms_ground_metres'],
+               'max_ground_metres': diagnostics['leave_one_out_max_ground_metres'],
+               'worst_label': controls[diagnostics['leave_one_out_worst_index']]['label'],
+               'fit_rms_ground_metres': diagnostics['fit_rms_ground_metres'],
+               'metres_per_source_pixel': diagnostics['metres_per_source_pixel']}
+    if summary['rms_ground_metres'] > MAX_LEAVE_ONE_OUT_RMS_METRES:
+        fail(f"Each corner predicted from the others misses by {summary['rms_ground_metres']:.1f} m RMS (worst: {summary['worst_label']}, {summary['max_ground_metres']:.1f} m); the limit is {MAX_LEAVE_ONE_OUT_RMS_METRES:.0f} m. Correct the corners before building a comparison.")
     return controls, checks, diagnostics, summary
 
 
@@ -265,8 +268,10 @@ def validate_evidence(record, source=None, points=None):
         fail('Historical measurements no longer match their recorded fit and withheld checks.')
     if points is not None:
         crs,saved = read_points(Path(points))
-        if crs != 'EPSG:3857' or len(saved)!=3:
+        if crs != 'EPSG:3857':
             fail('Historical controls must use EPSG:3857.')
+        if len(saved) != len(controls):
+            fail('The control file differs from its historical evidence.')
         for actual,expected in zip(saved,controls):
             for key in ['source_x','source_line_gdal','map_x','map_y']:
                 if abs(actual[key]-expected[key]) > 0.00001:
@@ -290,14 +295,12 @@ def export(tile, request):
         preview=verify_file(workspace['previews']['reference'],'The reference preview')
         measurements=request.get('measurements')
         controls,checks,diagnostics,summary=assess_measurements(measurements,workspace['source_info'],workspace['reference_info'],coverage=lambda x,y: drawn_coverage(preview,workspace['reference_info'],x,y))
-        warnings=affine_safety_warnings(diagnostics)
-        distortion,hard=split_affine_safety_warnings(warnings)
+        warnings=fit_safety_warnings(diagnostics)
+        distortion,hard=split_fit_safety_warnings(warnings)
         allow=request.get('allow_distortion') is True
         note=str(request.get('distortion_note') or '').strip()
-        if hard: fail('Historical corners fail a required geometry gate: '+'; '.join(hard))
-        if distortion and not allow: fail('This sheet needs a deliberate distortion exception: '+'; '.join(distortion))
-        if allow and (not note or not distortion): fail('A distortion exception needs an actual scale/angle warning and its evidence note.')
-        if note and not allow: fail('A distortion note needs the explicit exception choice.')
+        if hard or distortion: fail('Historical corners fail the sheet fit test: '+'; '.join(hard+distortion))
+        if allow or note: fail('A rotate-scale-shift fit has no distortion to accept; correct the corners instead.')
         record={'schema_version':1,'tile':tile,'selection_origin':'historical-reference',
                 'created_utc':datetime.now(timezone.utc).isoformat(),'current_source':workspace['source'],
                 'reference_profile':spec,'reference':workspace['reference'],'reference_preview':workspace['previews']['reference'],
@@ -314,7 +317,7 @@ def export(tile, request):
         validate_evidence(record,source,temporary)
         atomic_json(selected/f'tile-{tile:04d}.comparison.json',record)
         os.replace(temporary,points)
-        print(f"Saved three historical street corners; {len(checks)} withheld checks: {summary['rms_ground_metres']:.2f} m RMS, {summary['max_ground_metres']:.2f} m maximum. Build a fresh comparison before approval.")
+        print(f"Saved {len(controls)} historical street corners, all fitted by rotation + uniform scale + shift (zero skew). Leave-one-out error: {summary['rms_ground_metres']:.2f} m RMS, {summary['max_ground_metres']:.2f} m maximum ({summary['worst_label']}). Build a fresh comparison before approval.")
 
 
 def main():

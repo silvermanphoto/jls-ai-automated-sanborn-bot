@@ -28,10 +28,15 @@ import cv2
 import numpy as np
 
 from sanborn_georeference import (
-    affine_diagnostics,
-    affine_safety_warnings,
+    MAX_LEAVE_ONE_OUT_RMS_METRES,
+    MAX_METRES_PER_SOURCE_PIXEL,
+    MIN_FIT_POINTS,
+    MIN_METRES_PER_SOURCE_PIXEL,
+    fit_diagnostics,
+    fit_safety_warnings,
     read_points,
-    split_affine_safety_warnings,
+    split_fit_safety_warnings,
+    triangle_area,
 )
 from sanborn_geometry import StreetGeometry, constant_axis, intersect_axes
 from sanborn_osm import lookup_intersections, normalize_name as normalize_osm_name
@@ -481,7 +486,8 @@ def build_control_candidates(database: Path, axes: list[dict]) -> list[dict]:
     return candidates
 
 
-def _diagnostics_for_triplet(triplet: tuple[dict, dict, dict], width: int, height: int) -> dict:
+def _diagnostics_for_triplet(triplet: tuple[dict, ...], width: int, height: int) -> dict:
+    """Similarity fit (rotation + uniform scale + shift) over every supplied control."""
     controls = [
         {
             "source_x": candidate["source_x"],
@@ -491,7 +497,7 @@ def _diagnostics_for_triplet(triplet: tuple[dict, dict, dict], width: int, heigh
         }
         for candidate in triplet
     ]
-    return affine_diagnostics(controls, width, height)
+    return fit_diagnostics(controls, width, height)
 
 
 def rank_triplets(
@@ -542,10 +548,18 @@ def rank_triplets(
             diagnostics = _diagnostics_for_triplet(triplet, width, height)
         except RuntimeError:
             continue
-        ratio = float(diagnostics["scale_ratio"])
-        angle = float(diagnostics["axis_angle_degrees"])
-        coverage = float(diagnostics["source_triangle_coverage"] or 0)
-        if bool(diagnostics["unexpected_mirroring"]) or ratio > 1.35 or not 75 <= angle <= 105:
+        # With three points, leave-one-out error measures how far the triplet is
+        # from one rotate-scale-shift sheet; keep near misses for human review.
+        loo_rms = float(diagnostics["leave_one_out_rms_ground_metres"])
+        metres_per_pixel = float(diagnostics["metres_per_source_pixel"])
+        coverage = triangle_area(source_points) / float(width * height)
+        if (
+            bool(diagnostics["unexpected_mirroring"])
+            or loo_rms > 2 * MAX_LEAVE_ONE_OUT_RMS_METRES
+            or not 0.5 * MIN_METRES_PER_SOURCE_PIXEL
+            <= metres_per_pixel
+            <= 1.5 * MAX_METRES_PER_SOURCE_PIXEL
+        ):
             continue
         methods = [method for candidate in triplet for method in candidate["match_methods"]]
         method_penalty = sum(
@@ -554,14 +568,13 @@ def rank_triplets(
         )
         ambiguity_penalty = sum(max(0, int(candidate["pair_ambiguity_count"]) - 1) * 4 for candidate in triplet)
         score = (
-            abs(math.log(ratio)) * 120
-            + abs(angle - 90) * 2
+            loo_rms * 2
             + max(0, 0.15 - coverage) * 160
             + method_penalty
             + ambiguity_penalty
             + (0.0 if seed_distance is None else 8.0 * seed_distance / max_seed_distance)
         )
-        strict_warnings = affine_safety_warnings(diagnostics)
+        strict_warnings = fit_safety_warnings(diagnostics)
         ranked.append(
             {
                 "candidate_ids": ids,
@@ -581,8 +594,8 @@ def rank_triplets(
 
 def write_points(path: Path, controls: Iterable[dict]) -> None:
     rows = list(controls)
-    if len(rows) != 3:
-        fail("Exactly three controls are required to write a QGIS points file.")
+    if len(rows) < MIN_FIT_POINTS:
+        fail(f"At least {MIN_FIT_POINTS} controls are required to write a QGIS points file.")
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
         "#CRS: EPSG:3857",
@@ -663,9 +676,9 @@ def cmd_propose(args: argparse.Namespace) -> int:
             for candidate_id in triplet["candidate_ids"]
         ]
         print(
-            f"  {index}: {' | '.join(labels)}; ratio "
-            f"{triplet['diagnostics']['scale_ratio']:.4f}; angle "
-            f"{triplet['diagnostics']['axis_angle_degrees']:.2f}; "
+            f"  {index}: {' | '.join(labels)}; leave-one-out "
+            f"{triplet['diagnostics']['leave_one_out_rms_ground_metres']:.2f} m RMS; "
+            f"{triplet['diagnostics']['metres_per_source_pixel']:.4f} m/px; "
             f"review={'yes' if triplet['needs_chatgpt_review'] else 'approval only'}"
         )
     if not triplets:
@@ -831,12 +844,13 @@ def cmd_reuse_reviewed(args: argparse.Namespace) -> int:
         if not path.is_file():
             fail(f"The {description} does not exist: {path}")
     labels = [str(value).strip() for value in args.label]
-    if len(labels) != 3 or any(not label for label in labels):
-        fail("Exactly three named street intersections are required.")
-    if len({label.casefold() for label in labels}) != 3:
-        fail("The three reviewed street-intersection names must be distinct.")
-
     target_crs, reviewed_controls = read_points(reviewed_points_path)
+    if len(labels) != len(reviewed_controls) or any(not label for label in labels):
+        fail(
+            f"Name each of the {len(reviewed_controls)} reviewed street intersections once."
+        )
+    if len({label.casefold() for label in labels}) != len(labels):
+        fail("The reviewed street-intersection names must be distinct.")
     if target_crs != "EPSG:3857":
         fail("The previously reviewed points are not in EPSG:3857.")
     homography, registration = register_reviewed_scan(
@@ -881,10 +895,10 @@ def cmd_reuse_reviewed(args: argparse.Namespace) -> int:
         )
 
     diagnostics = _diagnostics_for_triplet(tuple(controls), width, height)
-    warnings = affine_safety_warnings(diagnostics)
+    warnings = fit_safety_warnings(diagnostics)
     if warnings:
         fail(
-            "The transferred reviewed corners fail the current affine safety checks: "
+            "The transferred reviewed corners fail the sheet fit test: "
             + "; ".join(warnings)
         )
     points = args.points.expanduser().resolve()
@@ -919,7 +933,7 @@ def cmd_reuse_reviewed(args: argparse.Namespace) -> int:
         encoding="utf-8",
     )
     print(
-        f"Transferred three previously reviewed corners to tile {args.tile}: "
+        f"Transferred {len(controls)} previously reviewed corners to tile {args.tile}: "
         f"{points} ({registration['inlier_count']} matching details; "
         f"median error {registration['median_error_pixels']:.1f}px)."
     )
@@ -963,22 +977,16 @@ def cmd_export(args: argparse.Namespace) -> int:
                 f"the {width} x {height} source scan."
             )
     diagnostics = _diagnostics_for_triplet(tuple(controls), width, height)
-    warnings = affine_safety_warnings(diagnostics)
+    warnings = fit_safety_warnings(diagnostics)
     if correction_record and not args.correction_note.strip():
         fail("A correction note is required when source coordinates are changed.")
-    distortion_warnings, hard_warnings = split_affine_safety_warnings(warnings)
+    distortion_warnings, hard_warnings = split_fit_safety_warnings(warnings)
     allow_distortion = bool(getattr(args, "allow_distortion", False))
     distortion_note = str(getattr(args, "distortion_note", "") or "").strip()
-    if hard_warnings:
-        fail("Corrected controls fail a non-overridable affine gate: " + "; ".join(hard_warnings))
-    if distortion_warnings and not allow_distortion:
-        fail("Corrected controls still fail the affine safety gate: " + "; ".join(distortion_warnings))
-    if allow_distortion and not distortion_note:
-        fail("--allow-distortion requires a nonblank --distortion-note.")
-    if distortion_note and not allow_distortion:
-        fail("--distortion-note requires --allow-distortion.")
-    if allow_distortion and not distortion_warnings:
-        fail("--allow-distortion was supplied, but these controls have no scale or angle warning.")
+    if hard_warnings or distortion_warnings:
+        fail("Corrected controls fail the sheet fit test: " + "; ".join(hard_warnings + distortion_warnings))
+    if allow_distortion or distortion_note:
+        fail("A rotate-scale-shift fit has no distortion to accept; correct the controls instead.")
     points = args.points.expanduser().resolve()
     comparison = args.comparison.expanduser().resolve()
     write_points(points, controls)

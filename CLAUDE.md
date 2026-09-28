@@ -2,7 +2,11 @@
 
 > Open findings from the 2026-09 code review: ~/.claude/overseer/reviews/2026-09/jls-ai-automated-sanborn-bot.md and ~/.claude/overseer/reviews/2026-09/sanborn-comparison.md. Mention them to Joel at the start of each session; delete this line once none are open.
 
-Use the local-first version 1.22 workflow. Read `AGENTS.md` for standing safety rules, `LOCAL BATCH ENGINE.md` for commands, and `AI AUTOMATED SANBORN BOT - MASTER INSTRUCTIONS.md` for the full evidence policy. Keep explanations in plain English.
+Use the local-first version 1.23 workflow. Read `AGENTS.md` for standing safety rules, `LOCAL BATCH ENGINE.md` for commands, and `AI AUTOMATED SANBORN BOT - MASTER INSTRUCTIONS.md` for the full evidence policy. Keep explanations in plain English.
+
+## Sheet fitting — hard rule
+
+HARD RULE (Joel, 2026-09-28): every Sanborn sheet is fitted with rotation + uniform scale + shift (a similarity fit, image y running down), least squares over all measured points, fit corners and check points alike. Never build a sheet from a three-point affine (`gdalwarp -order 1` over exactly three GCPs): it turns measuring error into skew. Skew beyond 3° is never acceptable and more than 1° is suspicious; the similarity fit has zero skew by design. A sheet passes when its leave-one-out error (each point predicted from a fit to the others) is 15 m RMS or less, it has at least three measured points, and its scale is plausible (0.035–0.075 ground metres per source pixel). The fit lives in `tools/sanborn_georeference.py` (`fit_diagnostics`, `fit_safety_warnings`, `write_similarity_vrt`): the similarity geotransform [c, a, b, d, b, −a] is written into a VRT and warped by `gdalwarp` without `-order`. Nothing waives the pass test; the old scale-ratio/axis-angle distortion exception is retired.
 
 ## Public software, private data
 
@@ -10,7 +14,7 @@ Joel explicitly confirmed on 2026-09-25 that this engine should remain public fo
 
 ## Operating boundary
 
-- Joel's Mac performs downloads, OCR, street matching, local OSM and Kauffman rendering, affine warping, checksums, and audits. ChatGPT or Joel reviews street identity, three source centers, non-control alignment, and the final contact sheet.
+- Joel's Mac performs downloads, OCR, street matching, local OSM and Kauffman rendering, rotate-scale-shift warping, checksums, and audits. ChatGPT or Joel reviews street identity, three source centers, non-control alignment, and the final contact sheet.
 - Never overwrite a source scan. Never save or close `/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/JLS Master Map File with 1911 Sanborns.qgz` unless Joel explicitly authorizes it in the same turn.
 - Run `python3 tools/sanborn_batch.py doctor` before production. `gdal_edit.py` is required because it embeds derivation evidence inside each finished GeoTIFF.
 - The normal parallel setting is three jobs. `sanborn_parallel.py` uses one shared pacer to keep actual worker launches at least two seconds apart by default; each one-tile child receives zero internal delay.
@@ -33,10 +37,9 @@ Reviewer and note are mandatory. `--replace-existing` deliberately supersedes an
 
 ## Controls and review packets
 
-- Use exactly three strong, distant, non-collinear controls by default. Use OSM only where street identity and geometry survive. The 1958 original topo is primary for historic streets within drawn coverage; its street-adjustment companion is supporting context only. Kauffman remains the supporting historical view in the legacy packet.
-- Historical controls require at least three separate, spatially distributed check crossings. Each sheet gets its own affine fit; never transfer sheet 486 percentages. The old cardinal-v2 placements for 486/493/494 and the prior487 result are superseded, while source scans and the manual workflow remain preserved.
-- A distortion exception during `sanborn_controls.py export` can waive only scale-ratio or axis-angle warnings. It cannot waive mirroring, inadequate geometry, wrong CRS, wrong neighborhood, seed-envelope failure, or an out-of-bounds control. The flag requires a nonblank note and an actual eligible warning.
-- Export approval does not carry automatically into packet creation. Repeat `--allow-distortion` and the evidence note on `sanborn_batch.py packet`.
+- Use at least three strong, distant street controls; every measured point joins the similarity fit. Use OSM only where street identity and geometry survive. The 1958 original topo is primary for historic streets within drawn coverage; its street-adjustment companion is supporting context only. Kauffman remains the supporting historical view in the legacy packet.
+- Historical corners (fit and check roles alike) need at least three measured points in total and a leave-one-out error of 15 m RMS or less; there is no separate check count or spread requirement (2026-09-28). Each sheet gets its own similarity fit; never transfer sheet 486 percentages. The old cardinal-v2 placements for 486/493/494 and the prior487 result are superseded, while source scans and the manual workflow remain preserved.
+- 2026-09-28: the distortion exception is retired. A similarity fit has no scale-ratio or axis-angle distortion to waive; `--allow-distortion` is refused everywhere. Correct the points instead.
 - Every review attempt gets a new `batch/reviews/tile-NNNN/packet-TIMESTAMP/` folder with an `approved-controls.points` copy. Never edit or reuse an older packet.
 - 2026-07-26: `cmd_packet` seeds that folder with the control copy and then calls `sanborn_review.py create` against it, so it must pass `--replace` — the generator refuses a folder that already holds anything. Without it the packet step failed on every run since the batch engine shipped, and no sheet could reach approval or a final map. A packet whose generator fails is now removed rather than left to accumulate.
 - 2026-07-26: `finish` resumes from an existing raster and ledger. When that pair came from controls a later approval replaced, resuming used to stop with a mismatched-ledger complaint and no way forward; `_ledger_predates_approval` now sets the superseded pair aside and warps again from what was approved. An unreadable ledger counts as superseded.
@@ -44,7 +47,7 @@ Reviewer and note are mandatory. `--replace-existing` deliberately supersedes an
 
 ## Final raster, resume, and QGIS
 
-- The final GeoTIFF embeds the source hash, immutable-controls hash, recomputed affine signature, and `local-first-affine-v2` pipeline identity. Resume succeeds only when the live GeoTIFF and adjacent ledger both verify against current inputs, pixels, extent, CRS, compression, seed limits, and packet evidence. A rewritten ledger cannot certify a stale raster.
+- The final GeoTIFF embeds the source hash, immutable-controls hash, recomputed fit signature, and `local-first-similarity-v3` pipeline identity (rasters built before 2026-09-28 carry `local-first-affine-v2` and can no longer be finished or resumed; rebuild them with the similarity fit). Resume succeeds only when the live GeoTIFF and adjacent ledger both verify against current inputs, pixels, extent, CRS, compression, seed limits, and packet evidence. A rewritten ledger cannot certify a stale raster.
 - Rebuilding a verified fixed-name tile first archives its raster, ledger, manifest, and packet evidence. Crash recovery may use only an explicitly unfinished retirement record bound to the exact paths and hashes; never restore an arbitrary older archive by matching filenames.
 - Process-local, stat-aware hash caching may avoid rereading unchanged shared evidence. Any canonical-path, device, inode, size, modification-time, or change-time difference forces a new hash; a mid-read change stops the run.
 - A schema-3 QGIS manifest binds the raster, ledger, source, immutable controls, review and approval records, all eight packet artifacts, OSM and Kauffman inputs, renderer/font inputs, and seed provenance.

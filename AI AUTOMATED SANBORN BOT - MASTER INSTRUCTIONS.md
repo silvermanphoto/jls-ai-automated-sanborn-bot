@@ -2,6 +2,12 @@
 
 ## Master operating instructions for georeferencing historic Sanborn sheets in QGIS
 
+> **Superseded fitting method (2026-09-28).** Joel's hard rule replaces every three-point
+> affine / Polynomial 1 instruction below: each sheet is fitted by rotation + uniform scale +
+> shift, least squares over all measured points, and passes only with a leave-one-out error
+> of 15 m RMS or less, at least three points, and 0.035–0.075 m per source pixel. Never warp a
+> sheet with `gdalwarp -order 1` over three GCPs. See `CLAUDE.md` and `AGENTS.md`.
+
 **Version:** 1.13
 **Created:** 2026-07-13  
 **Primary environment:** Local macOS batch engine, with QGIS as the final in-memory display boundary

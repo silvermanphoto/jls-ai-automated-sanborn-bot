@@ -12,7 +12,7 @@ Act as a careful historical-map georeferencing assistant. Work quickly, explain 
 
 ## Project scope
 
-Use the master instruction manual in this folder as the operating source of truth. Run the local-first worker for downloads, spatial OCR, OSM matching, index safeguards, reference packets, affine warps, and audit records. Joel or ChatGPT must still judge the proposed street identities and three controls. QGIS is the final in-memory display and layer-organization boundary; leave its protected project open and unsaved.
+Use the master instruction manual in this folder as the operating source of truth. Run the local-first worker for downloads, spatial OCR, OSM matching, index safeguards, reference packets, rotate-scale-shift warps, and audit records. Joel or ChatGPT must still judge the proposed street identities and measured points. QGIS is the final in-memory display and layer-organization boundary; leave its protected project open and unsaved.
 
 ## Safety invariants
 
@@ -21,14 +21,39 @@ Use the master instruction manual in this folder as the operating source of trut
 - Keep Global Opacity at 100%. Use a real alpha band for empty warp areas; never make black map ink transparent.
 - Apply QGIS Layer Rendering values Brightness 0, Gamma 1.0, and Contrast 0; disable channel stretching to completed Sanborn rasters.
 - Immediately collapse every completed Sanborn raster's layer-tree entry after loading it so its Band 1 (Red), Band 2 (Green), and Band 3 (Blue) legend rows stay closed by default.
-- Use exactly three strong, distant, non-collinear controls by default. OpenStreetMap is modern ground truth; Kauffman is the historical cross-check.
+- HARD RULE (Joel, 2026-09-28): every Sanborn sheet is fitted with rotation + uniform scale + shift (a similarity fit, image y running down), least squares over all measured points, fit corners and check points alike. Never build a sheet from a three-point affine (`gdalwarp -order 1` over exactly three GCPs): it turns measuring error into skew. Skew beyond 3° is never acceptable and more than 1° is suspicious; the similarity fit has zero skew by design. A sheet passes when its leave-one-out error (each point predicted from a fit to the others) is 15 m RMS or less, it has at least three measured points, and its scale is plausible (0.035–0.075 ground metres per source pixel). The fit lives in `tools/sanborn_georeference.py` (`fit_diagnostics`, `fit_safety_warnings`, `write_similarity_vrt`): the similarity geotransform [c, a, b, d, b, −a] is written into a VRT and warped by `gdalwarp` without `-order`. Nothing waives the pass test; the old scale-ratio/axis-angle distortion exception is retired.
+- Use at least three strong, distant street controls. OpenStreetMap is modern ground truth; Kauffman is the historical cross-check.
 - Require the fully local, hash-locked OSM and Kauffman packet before approval. Live QGIS is not required for reference review.
 - Treat the georeferenced-index location as an independent wrong-neighborhood safeguard, never as a final control point.
 - Place each finished raster exactly once inside the root-level `1911 ATLANTA SANBORNS` folder, in its area subfolder, in ascending printed tile-number order within that subfolder. Since 2026-09-28 sheet layers live in four area subfolders, in this order: `NORTHEAST ATL` (volume 2, tiles 100–299), `NORTHWEST ATL` (volume 1, tiles below 100), `SOUTHEAST ATL` (volume 4, tiles 400 and up) and `SOUTHWEST ATL` (volume 3, tiles 300–399). The importer creates a missing subfolder in its fixed position and refuses a sheet sitting loose in the group or in the wrong subfolder. Keep every sheet's legend collapsed. Keep `1911 ATLANTA SANBORNS` immediately beneath the exact 1911 index layer, and keep the index outside it.
-- Before warping, render a labeled full-sheet proof showing all three source GCP crosshairs exactly centered on their named intersections.
-- Reject a three-point affine fit when its scale ratio exceeds `1.15` or its transformed axes fall outside `85–95°`. A real historical-sheet exception requires `--allow-distortion`, a nonblank evidence note, agreement in the local OSM and Kauffman packet, and hash-locking of the flag, note, and exact warnings.
+- Before warping, render a labeled full-sheet proof showing every measured point's crosshair exactly centered on its named intersection.
+- Reject a sheet whose leave-one-out error exceeds 15 m RMS, that has fewer than three measured points, or whose scale falls outside 0.035–0.075 m per source pixel. No flag or note waives these gates.
 
 ## Lessons learned
+
+### 2026-09-28 — Version 1.23, rotate-scale-shift fit over every measured point
+
+- Joel's hard rule: sheets are fitted by rotation + uniform scale + shift, least
+  squares over all measured points. The three-point affine is gone from building,
+  review previews, proposal ranking, historical corners and final verification.
+- Why: three GCPs through `gdalwarp -order 1` always report zero residual, so any
+  measuring error becomes skew. Tile 21 rebuilt with the similarity fit lands within
+  about 1 m of its approved map.
+- The pass test is leave-one-out error (each point predicted from a fit to the
+  others) at most 15 m RMS, at least three points, and 0.035–0.075 ground metres per
+  source pixel. On the real test triplets it rejects the bad Tile 196 pixels (47 m)
+  and the Tile 474 triplet that once needed a distortion exception (58 m), and
+  passes corrected 196 (9 m), 236 (5 m) and 154 (4 m).
+- Historical exports write every corner, fit and check alike, into the points file.
+  The separate check count, check spread and 5 m / 10 m withheld-check limits are
+  retired; `independent_checks` now records the leave-one-out summary with
+  `method: leave-one-out`.
+- Review packets moved to schema 4 (`fit_diagnostics`). Schema-3 affine packets verify
+  only as frozen evidence for rasters already imported; they cannot be approved,
+  finished or resumed. Final ledgers carry `fit_model: similarity` and pipeline
+  `local-first-similarity-v3`.
+- Test fixtures now use about 0.05 ground metres per pixel so the scale gate is
+  exercised on realistic geometry.
 
 ### 2026-09-28 — Version 1.22, area subfolders and the renamed master
 

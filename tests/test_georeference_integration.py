@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import json
+import math
 from pathlib import Path
 import shutil
 import subprocess
@@ -34,12 +35,19 @@ class GeoreferenceIntegrationTests(unittest.TestCase):
             # Fixture creation needs no GDAL executable. Keep the actual warp,
             # embedded evidence and resume verification on the real toolchain.
             Image.new("RGB", (100, 100), (230, 220, 190)).save(source, format="TIFF")
+            # Four measured points under a known rotation, uniform scale and shift
+            # (0.06 EPSG:3857 units, about 0.05 ground metres, per source pixel).
+            scale, angle = 0.06, math.radians(30.0)
+            a, b = scale * math.cos(angle), scale * math.sin(angle)
+            c, d = -9393003.0, 3996003.0
+            rows = [(10, 10), (90, 10), (10, 90), (90, 90)]
             points.write_text(
                 "#CRS: EPSG:3857\n"
                 "mapX,mapY,sourceX,sourceY,enable\n"
-                "-9393100,3996100,10,-10,1\n"
-                "-9392900,3996100,90,-10,1\n"
-                "-9393100,3995900,10,-90,1\n",
+                + "".join(
+                    f"{a * x + b * y + c!r},{b * x - a * y + d!r},{x},{-y},1\n"
+                    for x, y in rows
+                ),
                 encoding="utf-8",
             )
             protected.write_text("synthetic protected project\n", encoding="utf-8")
@@ -74,12 +82,34 @@ class GeoreferenceIntegrationTests(unittest.TestCase):
                 "Auburn Avenue x Butler Street",
                 "Auburn Avenue x Fort Street",
                 "Houston Street x Butler Street",
+                "Houston Street x Fort Street",
             ):
                 command.extend(["--control-label", label])
             subprocess.run(command, check=True, stdout=subprocess.PIPE, text=True)
 
             record = json.loads(ledger.read_text(encoding="utf-8"))
             self.assertEqual(protected.stat().st_mtime_ns, protected_mtime)
+            transformation = record["transformation"]
+            self.assertEqual(transformation["fit_model"], "similarity")
+            self.assertEqual(transformation["pipeline"], "local-first-similarity-v3")
+            diagnostics = transformation["diagnostics"]
+            self.assertEqual(diagnostics["point_count"], 4)
+            self.assertEqual(diagnostics["skew_degrees"], 0.0)
+            self.assertAlmostEqual(diagnostics["rotation_degrees"], 30.0, places=6)
+            self.assertLess(diagnostics["leave_one_out_rms_ground_metres"], 1e-6)
+            for expected, actual in zip((c, a, b, d, b, -a), diagnostics["geotransform"]):
+                self.assertAlmostEqual(actual, expected, places=6)
+            # The warped raster's extent is the rotated scan footprint, so the
+            # final pixels come from the similarity geotransform, not GCPs.
+            info = json.loads(subprocess.run(
+                ["gdalinfo", "-json", str(output)], check=True, stdout=subprocess.PIPE, text=True
+            ).stdout)
+            corners = [(0, 0), (100, 0), (0, 100), (100, 100)]
+            footprint_x = [a * x + b * y + c for x, y in corners]
+            footprint_y = [b * x - a * y + d for x, y in corners]
+            geotransform = info["geoTransform"]
+            self.assertAlmostEqual(geotransform[0], min(footprint_x), delta=abs(geotransform[1]) * 1.1)
+            self.assertAlmostEqual(geotransform[3], max(footprint_y), delta=abs(geotransform[5]) * 1.1)
             self.assertEqual(
                 record["transformation"]["affine_provenance_signature"],
                 sanborn_batch.affine_provenance_signature(

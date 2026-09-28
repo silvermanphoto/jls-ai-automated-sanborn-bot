@@ -28,6 +28,11 @@ from sanborn_review import (
 )
 
 
+# EPSG:3857 units per source pixel: about 0.05 ground metres per pixel at Atlanta,
+# inside the plausible Sanborn scale range the sheet fit requires.
+UNIT = 0.06
+
+
 def inverse_mercator(x, y):
     lon = math.degrees(x / EARTH_RADIUS_METERS)
     lat = math.degrees(2 * math.atan(math.exp(y / EARTH_RADIUS_METERS)) - math.pi / 2)
@@ -71,8 +76,8 @@ class LocalReviewPacketTests(unittest.TestCase):
             "#CRS: EPSG:3857\n"
             "mapX,mapY,sourceX,sourceY,enable\n"
             f"{self.base_x},{self.base_y},100,-100,1\n"
-            f"{self.base_x + 800},{self.base_y},900,-100,1\n"
-            f"{self.base_x},{self.base_y - 800},100,-900,1\n",
+            f"{self.base_x + 800 * UNIT},{self.base_y},900,-100,1\n"
+            f"{self.base_x},{self.base_y - 800 * UNIT},100,-900,1\n",
             encoding="utf-8",
         )
 
@@ -82,8 +87,8 @@ class LocalReviewPacketTests(unittest.TestCase):
             "#CRS: EPSG:3857\n"
             "mapX,mapY,sourceX,sourceY,enable\n"
             f"{self.base_x},{self.base_y},100,-100,1\n"
-            f"{self.base_x + 800},{self.base_y},900,-100,1\n"
-            f"{self.base_x},{self.base_y - 400},100,-900,1\n",
+            f"{self.base_x + 800 * UNIT},{self.base_y},900,-100,1\n"
+            f"{self.base_x},{self.base_y - 400 * UNIT},100,-900,1\n",
             encoding="utf-8",
         )
         return points
@@ -93,14 +98,14 @@ class LocalReviewPacketTests(unittest.TestCase):
         if kind == "mirrored":
             rows = (
                 (self.base_x, self.base_y, 100, -100),
-                (self.base_x + 800, self.base_y, 900, -100),
-                (self.base_x, self.base_y + 800, 100, -900),
+                (self.base_x + 800 * UNIT, self.base_y, 900, -100),
+                (self.base_x, self.base_y + 800 * UNIT, 100, -900),
             )
         else:
             rows = (
                 (self.base_x, self.base_y, 100, -100),
-                (self.base_x + 50, self.base_y, 150, -100),
-                (self.base_x, self.base_y - 50, 100, -150),
+                (self.base_x + 800, self.base_y, 900, -100),
+                (self.base_x, self.base_y - 800, 100, -900),
             )
         points.write_text(
             "#CRS: EPSG:3857\n"
@@ -120,11 +125,11 @@ class LocalReviewPacketTests(unittest.TestCase):
     def _make_osm(self):
         source = self.root / "streets.osm"
         nodes = [
-            self._node(1, self.base_x - 100, self.base_y - 300),
-            self._node(2, self.base_x + 300, self.base_y - 300),
-            self._node(3, self.base_x + 900, self.base_y - 300),
-            self._node(4, self.base_x + 300, self.base_y + 100),
-            self._node(5, self.base_x + 300, self.base_y - 900),
+            self._node(1, self.base_x - 100 * UNIT, self.base_y - 300 * UNIT),
+            self._node(2, self.base_x + 300 * UNIT, self.base_y - 300 * UNIT),
+            self._node(3, self.base_x + 900 * UNIT, self.base_y - 300 * UNIT),
+            self._node(4, self.base_x + 300 * UNIT, self.base_y + 100 * UNIT),
+            self._node(5, self.base_x + 300 * UNIT, self.base_y - 900 * UNIT),
         ]
         source.write_text(
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<osm version=\"0.6\">\n"
@@ -155,10 +160,10 @@ class LocalReviewPacketTests(unittest.TestCase):
                 "-a_srs",
                 "EPSG:3857",
                 "-a_ullr",
-                str(self.base_x - 200),
-                str(self.base_y + 200),
-                str(self.base_x + 1000),
-                str(self.base_y - 1000),
+                str(self.base_x - 200 * UNIT),
+                str(self.base_y + 200 * UNIT),
+                str(self.base_x + 1000 * UNIT),
+                str(self.base_y - 1000 * UNIT),
                 str(png),
                 str(self.kauffman),
             ],
@@ -181,8 +186,8 @@ class LocalReviewPacketTests(unittest.TestCase):
                 {
                     "status": "selected",
                     "tile": 154,
-                    "map_x": self.base_x + 400,
-                    "map_y": self.base_y - 400,
+                    "map_x": self.base_x + 400 * UNIT,
+                    "map_y": self.base_y - 400 * UNIT,
                     "suggested_max_distance": 250.0,
                     "provenance": {
                         "path": str(self.seed_record),
@@ -195,12 +200,6 @@ class LocalReviewPacketTests(unittest.TestCase):
             ),
             source_preview_width=320,
             map_preview_width=300,
-            max_scale_ratio=1.15,
-            min_axis_angle=85.0,
-            max_axis_angle=95.0,
-            min_triangle_coverage=0.02,
-            min_x_span_fraction=0.20,
-            min_y_span_fraction=0.20,
             expected_crs="EPSG:3857",
             allow_distortion=False,
             distortion_note="",
@@ -214,7 +213,10 @@ class LocalReviewPacketTests(unittest.TestCase):
         import json
 
         review = json.loads((self.review_dir / "review.json").read_text(encoding="utf-8"))
-        self.assertEqual(review["schema_version"], 3)
+        self.assertEqual(review["schema_version"], 4)
+        self.assertEqual(review["fit_diagnostics"]["model"], "similarity")
+        self.assertEqual(review["fit_diagnostics"]["skew_degrees"], 0.0)
+        self.assertLess(review["fit_diagnostics"]["leave_one_out_rms_ground_metres"], 0.01)
         self.assertEqual(
             review["local_geographic_verification"]["method"],
             LOCAL_REFERENCE_METHOD,
@@ -226,7 +228,7 @@ class LocalReviewPacketTests(unittest.TestCase):
         current_review_state(review)
 
     def test_packet_requires_three_named_intersections(self):
-        with self.assertRaisesRegex(RuntimeError, "exactly three"):
+        with self.assertRaisesRegex(RuntimeError, "at least 3"):
             create_packet(
                 self._create_args(
                     review_dir=self.root / "unlabeled-review",
@@ -266,7 +268,7 @@ class LocalReviewPacketTests(unittest.TestCase):
         shutil.copy2(Path(sanborn_review.__file__), renderer)
         review["provenance"]["renderer_code"]["sanborn_review"] = sanborn_review._file_record(renderer)
         review["approval_token"] = sanborn_review.approval_token(
-            self.source, self.points, review["affine_diagnostics"],
+            self.source, self.points, review["fit_diagnostics"],
             labels=[p["label"] for p in review["points"]["controls"]],
             target_crs=review["points"]["target_crs"], safety_limits=review["safety_limits"],
             provenance=review["provenance"], artifacts=review["artifacts"], render_spec=review["render_spec"])
@@ -305,6 +307,24 @@ class LocalReviewPacketTests(unittest.TestCase):
         path.write_text(json.dumps(review))
         with self.assertRaisesRegex(RuntimeError, "frozen approval token"):
             require_approval(self.review_dir, frozen=True)
+
+    def test_legacy_affine_packet_verifies_only_as_frozen_evidence(self):
+        # Packets approved before 2026-09-28 used a three-point affine. Finished
+        # rasters keep verifying against that frozen evidence, but nothing new may
+        # be approved or warped from one.
+        self._approve_for_frozen_test()
+        review_path = self.review_dir / "review.json"
+        approval_path = self.review_dir / "approval.json"
+        review = json.loads(review_path.read_text())
+        approval = json.loads(approval_path.read_text())
+        review["schema_version"] = 3
+        review["affine_diagnostics"] = review.pop("fit_diagnostics")
+        approval["schema_version"] = 3
+        review_path.write_text(json.dumps(review))
+        approval_path.write_text(json.dumps(approval))
+        require_approval(self.review_dir, frozen=True)
+        with self.assertRaisesRegex(RuntimeError, "unsupported schema"):
+            require_approval(self.review_dir)
 
     def test_approval_requires_named_reviewer_current_schema_and_zoned_timestamp(self):
         with self.assertRaisesRegex(RuntimeError, "nonblank reviewer"):
@@ -377,77 +397,27 @@ class LocalReviewPacketTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "control-points file.*changed"):
             require_approval(self.review_dir)
 
-    def test_distortion_warning_rejects_without_override_and_nonblank_note(self):
+    def test_distorted_points_fail_the_leave_one_out_test(self):
         points = self._make_distorted_points()
         review_dir = self.root / "distortion-rejected"
-        with self.assertRaisesRegex(RuntimeError, "rejected by affine safety gate"):
+        with self.assertRaisesRegex(RuntimeError, "leave-one-out error"):
             create_packet(self._create_args(points=points, review_dir=review_dir))
 
-        with self.assertRaisesRegex(
-            RuntimeError, "requires a nonblank --distortion-note"
-        ):
+    def test_distortion_exception_is_retired(self):
+        with self.assertRaisesRegex(RuntimeError, "no distortion to accept"):
             create_packet(
                 self._create_args(
-                    points=points,
-                    review_dir=review_dir,
+                    points=self._make_distorted_points(),
+                    review_dir=self.root / "distortion-accepted",
                     allow_distortion=True,
-                    distortion_note="   ",
+                    distortion_note="A documented historical paper stretch.",
                 )
             )
 
-    def test_documented_distortion_override_is_accepted_and_hash_locked(self):
-        points = self._make_distorted_points()
-        review_dir = self.root / "distortion-accepted"
-        note = "A documented historical paper stretch explains the unequal axes."
-        create_packet(
-            self._create_args(
-                points=points,
-                review_dir=review_dir,
-                allow_distortion=True,
-                distortion_note=note,
-            )
-        )
-
-        review_file = review_dir / "review.json"
-        review = json.loads(review_file.read_text(encoding="utf-8"))
-        limits = review["safety_limits"]
-        self.assertIs(limits["allow_distortion"], True)
-        self.assertEqual(limits["distortion_note"], note)
-        self.assertTrue(limits["distortion_warnings"])
-        token, _ = current_review_state(review)
-        self.assertEqual(token, review["approval_token"])
-
-        approve_packet(
-            argparse.Namespace(
-                review_dir=review_dir,
-                approved_by="Test reviewer",
-                note="The documented distortion and both overlays were reviewed.",
-            )
-        )
-        require_approval(review_dir)
-        approved = json.loads(review_file.read_text(encoding="utf-8"))
-
-        tampered_note = copy.deepcopy(approved)
-        tampered_note["safety_limits"]["distortion_note"] = "A different explanation."
-        review_file.write_text(json.dumps(tampered_note, indent=2) + "\n", encoding="utf-8")
-        with self.assertRaisesRegex(RuntimeError, "changed after the packet was built"):
-            require_approval(review_dir)
-
-        review_file.write_text(json.dumps(approved, indent=2) + "\n", encoding="utf-8")
-        tampered_warnings = copy.deepcopy(approved)
-        tampered_warnings["safety_limits"]["distortion_warnings"].append(
-            "invented warning"
-        )
-        review_file.write_text(
-            json.dumps(tampered_warnings, indent=2) + "\n", encoding="utf-8"
-        )
-        with self.assertRaisesRegex(RuntimeError, "distortion warnings differ"):
-            require_approval(review_dir)
-
-    def test_distortion_note_cannot_override_mirroring_or_clustered_controls(self):
+    def test_mirrored_or_implausibly_scaled_points_are_rejected(self):
         for kind, expected in (
-            ("mirrored", "mirrored orientation"),
-            ("clustered", "control triangle covers only"),
+            ("mirrored", "leave-one-out error"),
+            ("full-size", "plausible"),
         ):
             with self.subTest(kind=kind):
                 with self.assertRaisesRegex(RuntimeError, expected):
@@ -455,11 +425,30 @@ class LocalReviewPacketTests(unittest.TestCase):
                         self._create_args(
                             points=self._make_hard_failure_points(kind),
                             review_dir=self.root / f"hard-{kind}-review",
-                            allow_distortion=True,
-                            distortion_note="This note must never bypass a hard gate.",
                         )
                     )
 
+    def test_more_than_three_points_all_join_the_fit(self):
+        points = self.root / "four-controls.points"
+        points.write_text(
+            self.points.read_text(encoding="utf-8")
+            + f"{self.base_x + 800 * UNIT},{self.base_y - 800 * UNIT},900,-900,1\n",
+            encoding="utf-8",
+        )
+        review_dir = self.root / "four-point-review"
+        create_packet(
+            self._create_args(
+                points=points,
+                review_dir=review_dir,
+                control_label=self._create_args().control_label + ["Fourth Street x Example Avenue"],
+            )
+        )
+        review = json.loads((review_dir / "review.json").read_text(encoding="utf-8"))
+        self.assertEqual(review["fit_diagnostics"]["point_count"], 4)
+        self.assertEqual(len(review["points"]["controls"]), 4)
+        current_review_state(review)
+        with self.assertRaisesRegex(RuntimeError, "name each one"):
+            create_packet(self._create_args(points=points, review_dir=self.root / "three-labels"))
 
 if __name__ == "__main__":
     unittest.main()

@@ -154,7 +154,7 @@ If one source point needs correction, name the control number and the corrected 
       --points "1911 SANBORN DOWNLOADS/Sanborn 1911 -- Tile 154_3points.points" \
       --comparison batch/proposals/tile-0154-selection.json
 
-A correction changes source pixels only; it does not invent a different OSM target. The export reruns the affine safety checks before writing the points.
+A correction changes source pixels only; it does not invent a different OSM target. The export reruns the sheet fit test (rotation + uniform scale + shift; leave-one-out error at most 15 m RMS; 0.035–0.075 m per source pixel) before writing the points.
 
 If the selected or corrected controls trigger only a scale-ratio or axis-angle warning and the historical sheet itself is independently proven distorted, the export must record that decision too:
 
@@ -196,21 +196,14 @@ Open that contact sheet at full size. Confirm all three named source crosshairs,
 The packet is approval evidence, not just a picture. Its lock includes:
 
 - the source and points files;
-- control labels, CRS, affine measurements, and safety limits;
+- control labels, CRS, similarity-fit measurements (leave-one-out error, scale, rotation), and the pass test;
 - the local OSM database, its metadata, and the Kauffman raster;
 - the renderer code, software versions, and font provenance;
 - all eight required packet artifacts and their raster properties.
 
 If anything changes, approval fails until the packet is rebuilt. If the packet reveals a bad point, do not approve it. Record the reason, reopen the tile to `review-ready`, correct or re-export the controls, and build a new packet.
 
-Affine safety warnings reject packet creation by default. For a historical sheet whose real distortion is independently supported by both overlays, the exception must be explicit and written into the packet:
-
-    python3 tools/sanborn_batch.py packet 474 \
-      --points "1911 SANBORN DOWNLOADS/Sanborn 1911 -- Tile 474_3points.points" \
-      --allow-distortion \
-      --distortion-note "The historic sheet is internally skewed; both independent overlays agree"
-
-`--allow-distortion` without a nonblank `--distortion-note` fails. The flag, note, and exact affine warnings are stored inside the packet's safety limits, included in its approval hash, rechecked before finishing, passed to the full warp, and recorded in the final ledger.
+A packet whose points fail the sheet fit test is refused. Since 2026-09-28 there is no distortion exception: a rotate-scale-shift fit has no skew to excuse, and `--allow-distortion` is refused. Correct the points instead.
 
 ## Approve and finish
 
@@ -223,7 +216,7 @@ After the complete local contact sheet passes:
 
 The approval command has one certifiable default: the hash-locked local OSM and Kauffman packet. It recomputes the packet lock. The finish command checks it again, creates the full-resolution EPSG:3857 GeoTIFF locally, adds a real alpha band, uses tiled lossless DEFLATE compression, writes a verification ledger, and creates a schema-3 QGIS import manifest. `gdal_edit.py` writes four items into the GeoTIFF itself: the source SHA-256, immutable-control SHA-256, affine-provenance signature, and `local-first-affine-v2` pipeline identity.
 
-If both GeoTIFF and ledger finished just before an interruption, rerunning `finish` recomputes the approved affine and validates the live raster, its embedded provenance, pixels, RGBA structure, extent, CRS, compression, seed envelope, packet, and adjacent ledger before resuming without another warp. Rewriting only the ledger cannot make a stale raster pass. If only one of the two was published, `finish` preserves the lone file under a timestamped `.incomplete-...` name before rebuilding; it does not delete interrupted evidence or accept a one-file result. A source, points, seed, packet, output, ledger, or embedded-provenance mismatch stops the tile.
+If both GeoTIFF and ledger finished just before an interruption, rerunning `finish` recomputes the approved similarity fit and validates the live raster, its embedded provenance, pixels, RGBA structure, extent, CRS, compression, seed envelope, packet, and adjacent ledger before resuming without another warp. Rewriting only the ledger cannot make a stale raster pass. If only one of the two was published, `finish` preserves the lone file under a timestamped `.incomplete-...` name before rebuilding; it does not delete interrupted evidence or accept a one-file result. A source, points, seed, packet, output, ledger, or embedded-provenance mismatch stops the tile.
 
 Large shared evidence can make repeated SHA-256 reads expensive. The batch, warp, and QGIS helpers cache a digest only for the lifetime of the process and only while the canonical path, device, inode, byte size, modification time, and change time remain identical. That speeds repeated checks of the same Kauffman raster and other shared files without weakening validation; any identity change forces a new hash, and a mid-read change stops the operation.
 

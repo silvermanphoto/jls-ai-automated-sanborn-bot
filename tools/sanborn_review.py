@@ -28,19 +28,26 @@ from typing import Any, NoReturn, Sequence
 from PIL import Image, ImageDraw, ImageFont, ImageOps, __version__ as PILLOW_VERSION
 
 from sanborn_georeference import (
-    affine_diagnostics,
-    affine_safety_warnings,
+    MIN_FIT_POINTS,
+    fit_diagnostics,
+    fit_safety_limits,
+    fit_safety_warnings,
     capture_json,
     read_points,
     require_expected_crs,
     require_program,
     sha256,
-    split_affine_safety_warnings,
+    split_fit_safety_warnings,
+    write_similarity_vrt,
 )
 from sanborn_osm import iter_way_geometries, read_metadata
 
 
-SCHEMA_VERSION = 3
+# Schema 4 (2026-09-28): packets fitted by rotation + uniform scale + shift over
+# every measured point. Schema 3 packets used a three-point affine; they remain
+# readable only as frozen evidence for rasters already finished.
+SCHEMA_VERSION = 4
+LEGACY_AFFINE_SCHEMA_VERSION = 3
 LOCAL_REFERENCE_METHOD = "local-osm-and-kauffman-packet"
 SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -62,12 +69,15 @@ REQUIRED_ARTIFACTS = (
 
 
 def validate_control_labels(values: Sequence[str]) -> list[str]:
-    """Require three distinct intersection names for a certifiable contact sheet."""
+    """Require distinct intersection names, one per measured point (at least three)."""
     labels = [str(value).strip() for value in values]
-    if len(labels) != 3 or any(not label for label in labels):
-        fail("Use --control-label exactly three times with nonblank intersection names.")
-    if len({label.casefold() for label in labels}) != 3:
-        fail("The three control labels must be distinct intersections.")
+    if len(labels) < MIN_FIT_POINTS or any(not label for label in labels):
+        fail(
+            f"Use --control-label at least {MIN_FIT_POINTS} times, once per measured point, "
+            "with nonblank intersection names."
+        )
+    if len({label.casefold() for label in labels}) != len(labels):
+        fail("The control labels must be distinct intersections.")
     separator = re.compile(r"(?:\s(?:x|×|at|and|&)\s|/)", re.IGNORECASE)
     for label in labels:
         if re.fullmatch(r"control\s*\d+", label, re.IGNORECASE) or not separator.search(label):
@@ -542,8 +552,8 @@ def current_review_state(review: dict[str, Any]) -> tuple[str, dict]:
 
     if int(review.get("schema_version", 0)) < SCHEMA_VERSION:
         fail(
-            "This packet predates fully local OSM and Kauffman verification. "
-            "Rebuild it before approval or finishing."
+            "This packet predates the rotate-scale-shift sheet fit over all measured "
+            "points. Rebuild it before approval or finishing."
         )
     source_record = review.get("source", {})
     points_record = review.get("points", {})
@@ -569,17 +579,20 @@ def current_review_state(review: dict[str, Any]) -> tuple[str, dict]:
             )
     limits = review["safety_limits"]
     require_expected_crs(target_crs, limits.get("expected_crs", "EPSG:3857"))
-    diagnostics = affine_diagnostics(controls, source_width, source_height)
-    warnings = affine_safety_warnings(
-        diagnostics,
-        max_scale_ratio=float(limits["max_scale_ratio"]),
-        min_axis_angle=float(limits["axis_angle_degrees"][0]),
-        max_axis_angle=float(limits["axis_angle_degrees"][1]),
-        min_triangle_coverage=float(limits["min_triangle_coverage"]),
-        min_x_span_fraction=float(limits["min_x_span_fraction"]),
-        min_y_span_fraction=float(limits["min_y_span_fraction"]),
-    )
-    distortion_warnings, hard_warnings = split_affine_safety_warnings(warnings)
+    expected_limits = {
+        **fit_safety_limits(limits.get("expected_crs", "EPSG:3857")),
+        "target_seed_context": limits.get("target_seed_context"),
+        "allow_distortion": False,
+        "distortion_note": "",
+        "distortion_warnings": [],
+    }
+    for key in ("expected_target_bbox", "expected_target_seed", "max_target_seed_distance"):
+        expected_limits.pop(key)
+    if limits != expected_limits:
+        fail("The review packet's fit limits differ from the current pass test. Rebuild it.")
+    diagnostics = fit_diagnostics(controls, source_width, source_height)
+    warnings = fit_safety_warnings(diagnostics)
+    distortion_warnings, hard_warnings = split_fit_safety_warnings(warnings)
     allow_distortion = limits.get("allow_distortion", False)
     distortion_note = limits.get("distortion_note", "")
     recorded_warnings = limits.get("distortion_warnings", [])
@@ -595,7 +608,7 @@ def current_review_state(review: dict[str, Any]) -> tuple[str, dict]:
         fail("The review packet allows distortion without a nonblank explanation.")
     if recorded_warnings != distortion_warnings:
         fail(
-            "The current affine distortion warnings differ from the hash-locked "
+            "The current fit warnings differ from the hash-locked "
             "review packet. Rebuild and approve it again."
         )
     if hard_warnings:
@@ -609,6 +622,8 @@ def current_review_state(review: dict[str, Any]) -> tuple[str, dict]:
         fail("The review packet claims a distortion exception that is no longer needed.")
 
     labels = [str(control["label"]) for control in points_record["controls"]]
+    if len(labels) != len(controls):
+        fail("The review packet names a different number of points than its control file.")
     provenance = _current_provenance(review, gdalinfo)
     artifacts = _current_artifacts(review, gdalinfo)
     render_spec = review.get("render_spec")
@@ -687,48 +702,28 @@ def create_packet(args: argparse.Namespace) -> int:
                 f"{source_width} x {source_height} source scan."
             )
     require_expected_crs(target_crs, args.expected_crs)
-    diagnostics = affine_diagnostics(controls, source_width, source_height)
+    if len(labels) != len(controls):
+        fail(
+            f"The control file has {len(controls)} measured points; name each one "
+            "with --control-label, in file order."
+        )
+    diagnostics = fit_diagnostics(controls, source_width, source_height)
     safety_limits = {
-        "max_scale_ratio": args.max_scale_ratio,
-        "axis_angle_degrees": [args.min_axis_angle, args.max_axis_angle],
-        "min_triangle_coverage": args.min_triangle_coverage,
-        "min_x_span_fraction": args.min_x_span_fraction,
-        "min_y_span_fraction": args.min_y_span_fraction,
-        "expected_crs": args.expected_crs,
+        **fit_safety_limits(args.expected_crs),
         "target_seed_context": target_seed_context,
     }
-    warnings = affine_safety_warnings(
-        diagnostics,
-        max_scale_ratio=args.max_scale_ratio,
-        min_axis_angle=args.min_axis_angle,
-        max_axis_angle=args.max_axis_angle,
-        min_triangle_coverage=args.min_triangle_coverage,
-        min_x_span_fraction=args.min_x_span_fraction,
-        min_y_span_fraction=args.min_y_span_fraction,
-    )
-    distortion_warnings, hard_warnings = split_affine_safety_warnings(warnings)
-    allow_distortion = bool(getattr(args, "allow_distortion", False))
-    distortion_note = str(getattr(args, "distortion_note", "") or "").strip()
-    if allow_distortion and not distortion_note:
-        fail("--allow-distortion requires a nonblank --distortion-note.")
-    if distortion_note and not allow_distortion:
-        fail("--distortion-note requires --allow-distortion.")
-    if hard_warnings:
+    for key in ("expected_target_bbox", "expected_target_seed", "max_target_seed_distance"):
+        safety_limits.pop(key)
+    warnings = fit_safety_warnings(diagnostics)
+    distortion_warnings, hard_warnings = split_fit_safety_warnings(warnings)
+    allow_distortion = False
+    distortion_note = ""
+    if getattr(args, "allow_distortion", False) or str(getattr(args, "distortion_note", "") or "").strip():
+        fail("A rotate-scale-shift fit has no distortion to accept; correct the points instead.")
+    if hard_warnings or distortion_warnings:
         fail(
-            "Review packet rejected by hard affine safety gate: "
-            + "; ".join(hard_warnings)
-        )
-    if distortion_warnings and not allow_distortion:
-        fail(
-            "Review packet rejected by affine safety gate: "
-            + "; ".join(distortion_warnings)
-            + f". Ratio={diagnostics['scale_ratio']:.4f}, "
-            f"angle={diagnostics['axis_angle_degrees']:.3f} degrees."
-        )
-    if allow_distortion and not distortion_warnings:
-        fail(
-            "--allow-distortion only applies to scale-ratio or axis-angle warnings; "
-            "these controls have no such warning."
+            "Review packet rejected by the sheet fit test: "
+            + "; ".join(hard_warnings + distortion_warnings)
         )
     safety_limits.update(
         {
@@ -800,26 +795,12 @@ def create_packet(args: argparse.Namespace) -> int:
     source_crosshairs.save(artifact_paths["source_crosshairs"])
 
     with tempfile.TemporaryDirectory(prefix="sanborn-review-") as temp:
-        vrt = Path(temp) / "controls.vrt"
-        command = [gdal_translate, "-q", "-of", "VRT", "-a_srs", target_crs]
-        for control in controls:
-            command.extend(
-                [
-                    "-gcp",
-                    str(control["source_x"]),
-                    str(control["source_line_gdal"]),
-                    str(control["map_x"]),
-                    str(control["map_y"]),
-                ]
-            )
-        command.extend([str(source), str(vrt)])
-        subprocess.run(command, check=True)
+        vrt = Path(temp) / "similarity.vrt"
+        write_similarity_vrt(gdal_translate, source, target_crs, diagnostics, vrt)
         subprocess.run(
             [
                 gdalwarp,
                 "-q",
-                "-order",
-                "1",
                 "-t_srs",
                 target_crs,
                 "-r",
@@ -914,7 +895,7 @@ def create_packet(args: argparse.Namespace) -> int:
     _make_contact_sheet(
         (
             ("Source scan: proposed controls", source_crosshairs),
-            ("Affine preview: target controls", georef_marked),
+            ("Rotate-scale-shift preview: target points", georef_marked),
             ("Local OSM named roads", osm_overlay),
             ("1921 Kauffman map overlay", kauffman_overlay),
             *historical_views,
@@ -951,7 +932,7 @@ def create_packet(args: argparse.Namespace) -> int:
             "sanborn_blend_fraction": 0.45,
             "coverage_fraction": kauffman_coverage,
         },
-        "affine_preview": {"order": 1, "resampling": "cubic"},
+        "sheet_preview": {"fit_model": "similarity", "resampling": "cubic"},
         **({"historical_reference": {"raster_coverage_fraction": historical_coverage,
             "coverage_note": "Raster coverage includes blank paper; each measured street also passed a drawn-ink check.",
             "independent_checks": historical_evidence["independent_checks"],
@@ -984,7 +965,7 @@ def create_packet(args: argparse.Namespace) -> int:
             "target_crs": target_crs,
             "controls": controls,
         },
-        "affine_diagnostics": diagnostics,
+        "fit_diagnostics": diagnostics,
         "safety_limits": safety_limits,
         "provenance": provenance,
         "render_spec": render_spec,
@@ -995,12 +976,13 @@ def create_packet(args: argparse.Namespace) -> int:
             "network_required": False,
             "qgis_required": False,
             "instructions": (
-                "Inspect review-contact-sheet.png at full size. Confirm the three source "
-                "crosshairs name the intended intersections and that the transformed street "
+                "Inspect review-contact-sheet.png at full size. Confirm every source "
+                "crosshair names the intended intersection and that the transformed street "
                 "grid agrees with genuinely surviving OSM street centerlines and historical evidence. "
                 "Where supplied, the 1958 original topo is primary for vanished streets; Kauffman is supporting context. "
                 "Do not use planned road lines or changed curbs as original street centers. "
-                "Zero residual at three fit corners is not independent validation."
+                "The sheet is fitted by rotation + uniform scale + shift over every point "
+                "(zero skew); its leave-one-out error predicts each point from the others."
             ),
         },
         "approval_token": token,
@@ -1023,17 +1005,12 @@ def create_packet(args: argparse.Namespace) -> int:
             review_path.unlink(missing_ok=True)
         raise
     print(f"Review packet: {review_dir}")
-    if warnings:
-        print(
-            "Affine safety override recorded: "
-            + "; ".join(warnings)
-            + f". Note: {distortion_note}"
-        )
-    else:
-        print(
-            f"Affine safety passed: ratio {diagnostics['scale_ratio']:.4f}; "
-            f"angle {diagnostics['axis_angle_degrees']:.3f} degrees"
-        )
+    print(
+        "Sheet fit passed (rotation + uniform scale + shift, zero skew): "
+        f"{diagnostics['point_count']} points; leave-one-out "
+        f"{diagnostics['leave_one_out_rms_ground_metres']:.2f} m RMS; "
+        f"{diagnostics['metres_per_source_pixel']:.4f} m per source pixel"
+    )
     print(f"Local references: {len(osm_way_ids)} OSM ways plus the Kauffman crop")
     print(f"Approval token: {token}")
     return 0
@@ -1085,8 +1062,10 @@ def frozen_review_state(review: dict[str, Any]) -> tuple[str, dict]:
     New approvals and warps must continue to use current_review_state instead.
     The caller must also verify the manifest's review/approval file hashes.
     """
-    if review.get("schema_version") != SCHEMA_VERSION:
+    schema = review.get("schema_version")
+    if schema not in (SCHEMA_VERSION, LEGACY_AFFINE_SCHEMA_VERSION):
         fail("The completed review packet uses an unsupported schema.")
+    diagnostics_key = "fit_diagnostics" if schema == SCHEMA_VERSION else "affine_diagnostics"
     source = _check_record(review.get("source"), "the source scan")
     points = _check_record(review.get("points"), "the control-points file")
     provenance = review.get("provenance")
@@ -1102,11 +1081,11 @@ def frozen_review_state(review: dict[str, Any]) -> tuple[str, dict]:
         fail("The completed packet is missing required review artifacts.")
     for key, record in artifacts.items():
         _check_record(record, f"review artifact {key}")
-    for key in ("affine_diagnostics", "safety_limits", "render_spec"):
+    for key in (diagnostics_key, "safety_limits", "render_spec"):
         if not isinstance(review.get(key), dict):
             fail(f"The completed packet lacks its frozen {key}.")
     token = approval_token(
-        Path(source["path"]), Path(points["path"]), review["affine_diagnostics"],
+        Path(source["path"]), Path(points["path"]), review[diagnostics_key],
         labels=[str(control["label"]) for control in review["points"]["controls"]],
         target_crs=review["points"]["target_crs"],
         safety_limits=review["safety_limits"], provenance=provenance,
@@ -1114,7 +1093,7 @@ def frozen_review_state(review: dict[str, Any]) -> tuple[str, dict]:
     )
     if token != review.get("approval_token"):
         fail("The completed packet no longer matches its frozen approval token.")
-    return token, review["affine_diagnostics"]
+    return token, review[diagnostics_key]
 
 
 def require_approval(review_dir: Path, *, frozen: bool = False) -> tuple[dict, dict]:
@@ -1124,7 +1103,12 @@ def require_approval(review_dir: Path, *, frozen: bool = False) -> tuple[dict, d
         fail("The hash-locked review packet has not been approved.")
     review = json.loads(review_file.read_text(encoding="utf-8"))
     approval = json.loads(approval_file.read_text(encoding="utf-8"))
-    if approval.get("schema_version") != SCHEMA_VERSION:
+    accepted_schemas = (
+        (SCHEMA_VERSION, LEGACY_AFFINE_SCHEMA_VERSION) if frozen else (SCHEMA_VERSION,)
+    )
+    if approval.get("schema_version") not in accepted_schemas or (
+        approval.get("schema_version") != review.get("schema_version")
+    ):
         fail("The approval record uses an unsupported schema.")
     if review.get("approved") is not True:
         fail("The review packet is not marked approved.")
@@ -1173,17 +1157,11 @@ def parse_args() -> argparse.Namespace:
     )
     create.add_argument("--source-preview-width", type=int, default=1600)
     create.add_argument("--map-preview-width", type=int, default=1400)
-    create.add_argument("--max-scale-ratio", type=float, default=1.15)
-    create.add_argument("--min-axis-angle", type=float, default=85.0)
-    create.add_argument("--max-axis-angle", type=float, default=95.0)
-    create.add_argument("--min-triangle-coverage", type=float, default=0.02)
-    create.add_argument("--min-x-span-fraction", type=float, default=0.20)
-    create.add_argument("--min-y-span-fraction", type=float, default=0.20)
     create.add_argument("--expected-crs", default="EPSG:3857")
     create.add_argument(
         "--allow-distortion",
         action="store_true",
-        help="Build the packet despite affine safety warnings; requires a written reason",
+        help="Retired: a rotate-scale-shift fit has no distortion to accept",
     )
     create.add_argument(
         "--distortion-note",

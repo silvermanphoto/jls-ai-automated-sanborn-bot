@@ -145,9 +145,9 @@ class BatchSafetyTests(unittest.TestCase):
         points.write_text(
             "#CRS: EPSG:3857\n"
             "mapX,mapY,sourceX,sourceY,enable\n"
-            "-9393100,3996100,10,-10,1\n"
-            "-9392900,3996100,90,-10,1\n"
-            "-9393100,3995900,10,-90,1\n",
+            "-9393002.4,3996002.4,10,-10,1\n"
+            "-9392997.6,3996002.4,90,-10,1\n"
+            "-9393002.4,3995997.6,10,-90,1\n",
             encoding="utf-8",
         )
         output.write_bytes(b"synthetic lossless rgba geotiff identity")
@@ -177,24 +177,14 @@ class BatchSafetyTests(unittest.TestCase):
                     seed_context["provenance"], sort_keys=True
                 ),
             )
-        limits = {
-            "max_scale_ratio": 1.15,
-            "axis_angle_degrees": [85.0, 95.0],
-            "min_triangle_coverage": 0.02,
-            "min_x_span_fraction": 0.20,
-            "min_y_span_fraction": 0.20,
-            "expected_crs": "EPSG:3857",
-            "expected_target_bbox": [
-                seed_x - distance,
-                seed_y - distance,
-                seed_x + distance,
-                seed_y + distance,
-            ],
-            "expected_target_seed": [seed_x, seed_y],
-            "max_target_seed_distance": distance,
-        }
+        limits = sanborn_batch.fit_safety_limits(
+            "EPSG:3857",
+            [seed_x - distance, seed_y - distance, seed_x + distance, seed_y + distance],
+            [seed_x, seed_y],
+            distance,
+        )
         _, controls = sanborn_batch.read_points(points)
-        diagnostics = sanborn_batch.affine_diagnostics(controls, 100, 100)
+        diagnostics = sanborn_batch.fit_diagnostics(controls, 100, 100)
         diagnostics["target_location_check"] = sanborn_batch.target_location_diagnostics(
             controls,
             diagnostics,
@@ -235,6 +225,9 @@ class BatchSafetyTests(unittest.TestCase):
                 "controls": recorded_controls,
             },
             "transformation": {
+                "type": sanborn_batch.SIMILARITY_TRANSFORMATION_TYPE,
+                "fit_model": "similarity",
+                "pipeline": sanborn_batch.PIPELINE_METADATA_VALUE,
                 "target_crs": "EPSG:3857",
                 "distortion_override": False,
                 "safety_limits": limits,
@@ -296,7 +289,7 @@ class BatchSafetyTests(unittest.TestCase):
                 "IMAGE_STRUCTURE": {"COMPRESSION": "DEFLATE", "PREDICTOR": "2"},
             },
             "coordinateSystem": {"wkt": 'PROJCRS["WGS 84",ID["EPSG",3857]]'},
-            "geoTransform": [-9393125.0, 25.0, 0.0, 3996125.0, 0.0, -25.0],
+            "geoTransform": [-9393003.0, 0.6, 0.0, 3996003.0, 0.0, -0.6],
         }
 
     def _minimal_archive_fixture(self, tile=196, pixels=b"verified pixels"):
@@ -490,7 +483,7 @@ class BatchSafetyTests(unittest.TestCase):
         self.assertFalse(points.exists())
         self.assertFalse(comparison.exists())
 
-    def test_export_allows_only_documented_scale_or_angle_distortion(self):
+    def test_export_uses_the_similarity_fit_and_has_no_distortion_exception(self):
         def proposal_for(targets, name):
             proposal = self.folder / f"{name}.json"
             proposal.write_text(
@@ -517,41 +510,42 @@ class BatchSafetyTests(unittest.TestCase):
             )
             return proposal
 
-        note = "The paper sheet is visibly stretched and both local overlays agree."
-        points = self.folder / "distorted.points"
-        comparison = self.folder / "distorted-comparison.json"
-        accepted = argparse.Namespace(
-            proposal=proposal_for(((0, 0), (800, 0), (0, -400)), "distorted"),
-            triplet=0,
-            source_correction=[],
-            correction_note="",
-            allow_distortion=True,
-            distortion_note=note,
-            points=points,
-            comparison=comparison,
-        )
-        self.assertEqual(sanborn_controls.cmd_export(accepted), 0)
-        exception = json.loads(comparison.read_text(encoding="utf-8"))["distortion_exception"]
-        self.assertTrue(exception["allowed"])
-        self.assertEqual(exception["note"], note)
-        self.assertTrue(exception["warnings"])
+        def export_args(targets, name, **overrides):
+            values = dict(
+                proposal=proposal_for(targets, name),
+                triplet=0,
+                source_correction=[],
+                correction_note="",
+                allow_distortion=False,
+                distortion_note="",
+                points=self.folder / f"{name}.points",
+                comparison=self.folder / f"{name}-comparison.json",
+            )
+            values.update(overrides)
+            return argparse.Namespace(**values)
 
-        mirrored_points = self.folder / "mirrored.points"
-        mirrored_comparison = self.folder / "mirrored-comparison.json"
-        mirrored = argparse.Namespace(
-            proposal=proposal_for(((0, 0), (800, 0), (0, 800)), "mirrored"),
-            triplet=0,
-            source_correction=[],
-            correction_note="",
-            allow_distortion=True,
-            distortion_note="A note must never bypass mirroring.",
-            points=mirrored_points,
-            comparison=mirrored_comparison,
-        )
-        with self.assertRaisesRegex(RuntimeError, "non-overridable.*mirrored"):
-            sanborn_controls.cmd_export(mirrored)
-        self.assertFalse(mirrored_points.exists())
-        self.assertFalse(mirrored_comparison.exists())
+        # 0.06 EPSG:3857 units per pixel: about 0.05 ground metres per pixel.
+        good = export_args(((0, 0), (48, 0), (0, -48)), "square")
+        self.assertEqual(sanborn_controls.cmd_export(good), 0)
+        diagnostics = json.loads(good.comparison.read_text(encoding="utf-8"))["diagnostics"]
+        self.assertEqual(diagnostics["model"], "similarity")
+        self.assertEqual(diagnostics["skew_degrees"], 0.0)
+
+        for name, targets, overrides in (
+            ("distorted", ((0, 0), (48, 0), (0, -24)), {}),
+            ("mirrored", ((0, 0), (48, 0), (0, 48)), {}),
+            (
+                "excused",
+                ((0, 0), (48, 0), (0, -24)),
+                {"allow_distortion": True, "distortion_note": "A stretched sheet."},
+            ),
+        ):
+            with self.subTest(name=name):
+                args = export_args(targets, name, **overrides)
+                with self.assertRaisesRegex(RuntimeError, "sheet fit test"):
+                    sanborn_controls.cmd_export(args)
+                self.assertFalse(args.points.exists())
+                self.assertFalse(args.comparison.exists())
 
     def test_final_pair_accepts_valid_ledger_and_rejects_changed_evidence(self):
         source, points, output, ledger, protected, fields, record = self._final_fixture()
@@ -579,7 +573,13 @@ class BatchSafetyTests(unittest.TestCase):
                 wrong_bbox = deepcopy(record)
                 wrong_bbox["transformation"]["safety_limits"]["expected_target_bbox"][0] += 1
                 ledger.write_text(json.dumps(wrong_bbox), encoding="utf-8")
-                with self.assertRaisesRegex(RuntimeError, "safety limits"):
+                with self.assertRaisesRegex(RuntimeError, "fit limits"):
+                    sanborn_batch._verify_final_pair(row, output, ledger)
+
+                affine_ledger = deepcopy(record)
+                affine_ledger["transformation"]["type"] = "Polynomial 1 / global affine"
+                ledger.write_text(json.dumps(affine_ledger), encoding="utf-8")
+                with self.assertRaisesRegex(RuntimeError, "rotation \\+ uniform scale \\+ shift"):
                     sanborn_batch._verify_final_pair(row, output, ledger)
 
                 changed_project = deepcopy(record)
