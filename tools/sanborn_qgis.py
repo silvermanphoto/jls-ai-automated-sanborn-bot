@@ -331,7 +331,7 @@ def _load_ledger(
     raw_project = protected.get("path")
     if not isinstance(raw_project, str) or not Path(raw_project).expanduser().is_absolute():
         _fail(f"{manifest}: georeference ledger protected-project path must be absolute")
-    if Path(raw_project).expanduser().resolve() != PROTECTED_PROJECT.resolve():
+    if not COLLECTION.names_protected_project(raw_project):
         _fail(f"{manifest}: georeference ledger names the wrong protected QGIS project")
     before = protected.get("mtime_ns_before")
     after = protected.get("mtime_ns_after")
@@ -692,6 +692,10 @@ def build_plan(manifests: Iterable[Path], *, preserve_existing_variants: Path | 
         "index_layer": INDEX_LAYER_NAME,
         "index_layer_source": str(INDEX_LAYER_SOURCE),
         "group": GROUP_NAME,
+        "subfolders": [
+            {"name": name, "first_tile": first, "last_tile": last}
+            for name, first, last in COLLECTION.subfolders
+        ],
         "style": dict(STYLE),
         "tiles": tiles,
         "actions": [
@@ -701,8 +705,9 @@ def build_plan(manifests: Iterable[Path], *, preserve_existing_variants: Path | 
             "Create or safely reposition the exact Sanborn group immediately below the index.",
             "Reuse each raster by canonical path or add it exactly once.",
             "Apply the fixed rendering formula and alpha band.",
-            "Sort all Sanborn children by printed tile number.",
-            "Expand the group and collapse every child raster node.",
+            "Place each sheet in its area subfolder, creating a missing one in its fixed position.",
+            "Sort the sheets inside each subfolder by printed tile number.",
+            "Expand the group and collapse every sheet layer's legend.",
             "Verify the protected project file was not written.",
         ],
         "save_project": False,
@@ -853,6 +858,73 @@ def _sanborn_existing_group(root):
     return matches[0] if matches else None
 
 
+def _sanborn_subfolders():
+    return PLAN.get("subfolders") or []
+
+
+def _sanborn_subfolder_name(tile):
+    """The area subfolder for a printed tile number, or None for a flat group."""
+    folders = _sanborn_subfolders()
+    if not folders:
+        return None
+    for folder in folders:
+        last = folder["last_tile"]
+        if tile >= folder["first_tile"] and (last is None or tile <= last):
+            return folder["name"]
+    _sanborn_fail("tile {} falls outside every Sanborn subfolder".format(tile))
+
+
+def _sanborn_containers(group):
+    """The nodes that hold sheet layers: the area subfolders, or the group itself."""
+    folders = _sanborn_subfolders()
+    if not folders:
+        return [(group, None)]
+    order = [folder["name"] for folder in folders]
+    found = []
+    for node in group.children():
+        if not isinstance(node, QgsLayerTreeGroup):
+            _sanborn_fail(
+                "layer {!r} sits directly in the Sanborn group instead of an area "
+                "subfolder".format(node.name())
+            )
+        if node.name() not in order:
+            _sanborn_fail("the Sanborn group contains an unexpected subfolder {!r}".format(node.name()))
+        found.append(node)
+    names = [node.name() for node in found]
+    if len(set(names)) != len(names):
+        _sanborn_fail("the Sanborn group contains the same area subfolder more than once")
+    if names != sorted(names, key=order.index):
+        _sanborn_fail("the Sanborn area subfolders are out of order: " + ", ".join(names))
+    return [(node, node.name()) for node in found]
+
+
+def _sanborn_sheet_container(group, tile):
+    """The subfolder a sheet belongs in, created in its fixed position if missing."""
+    name = _sanborn_subfolder_name(tile)
+    if name is None:
+        return group
+    containers = _sanborn_containers(group)
+    for container, container_name in containers:
+        if container_name == name:
+            return container
+    order = [folder["name"] for folder in _sanborn_subfolders()]
+    position = sum(1 for _, container_name in containers
+                   if order.index(container_name) < order.index(name))
+    created = group.insertGroup(position, name)
+    if not isinstance(created, QgsLayerTreeGroup):
+        _sanborn_fail("QGIS could not create the Sanborn subfolder " + name)
+    return created
+
+
+def _sanborn_is_within(node, group):
+    parent = node.parent()
+    while parent is not None:
+        if parent is group:
+            return True
+        parent = parent.parent()
+    return False
+
+
 def _sanborn_source_filename_tile(layer):
     return _sanborn_tile_number(os.path.basename(_sanborn_layer_source(layer)))
 
@@ -882,7 +954,12 @@ def _sanborn_check_group_contents(group, incoming):
             _sanborn_fail("the declared full/alpha pair is not already present in the Sanborn group")
         return
     seen = {}
-    for node in group.children():
+    nodes = [
+        (node, folder_name)
+        for container, folder_name in _sanborn_containers(group)
+        for node in container.children()
+    ]
+    for node, folder_name in nodes:
         if not isinstance(node, QgsLayerTreeLayer):
             _sanborn_fail("the Sanborn group contains a subgroup or unknown node")
         layer = node.layer()
@@ -907,6 +984,13 @@ def _sanborn_check_group_contents(group, incoming):
                 "Sanborn group layer {!r} displays tile {} but its source filename "
                 "is tile {}".format(
                     node.name(), displayed_tile, source_tile
+                )
+            )
+        expected_folder = _sanborn_subfolder_name(displayed_tile)
+        if expected_folder != folder_name:
+            _sanborn_fail(
+                "tile {} belongs in subfolder {!r} but sits in {!r}".format(
+                    displayed_tile, expected_folder, folder_name
                 )
             )
         seen.setdefault(displayed_tile, []).append(_sanborn_layer_source(layer))
@@ -1085,10 +1169,11 @@ def _sanborn_position_group(root, index_node, group, rollback):
     return replacement, "repositioned"
 
 
-def _sanborn_ensure_single_group_node(root, group, layer):
+def _sanborn_ensure_single_group_node(root, container, layer):
+    # The container is the sheet's area subfolder (or the group when flat).
     nodes = [node for node in root.findLayers() if node.layerId() == layer.id()]
-    inside = [node for node in nodes if node.parent() is group]
-    keeper = inside[0] if inside else group.insertLayer(len(group.children()), layer)
+    inside = [node for node in nodes if node.parent() is container]
+    keeper = inside[0] if inside else container.insertLayer(len(container.children()), layer)
     # The keeper exists before any duplicate or misplaced node is removed.
     for node in list(root.findLayers()):
         if node.layerId() == layer.id() and node is not keeper:
@@ -1123,7 +1208,7 @@ def _sanborn_snapshot_rollback(root, existing_group, prepared):
         renderer = layer.renderer()
         external_nodes = []
         for node in root.findLayers():
-            if node.layerId() != layer.id() or node.parent() is existing_group:
+            if node.layerId() != layer.id() or _sanborn_is_within(node, existing_group):
                 continue
             parent = node.parent()
             if parent is None:
@@ -1259,8 +1344,28 @@ def _sanborn_apply_style(layer):
 
 def _sanborn_numeric_order(project, group):
     # Recheck the exact preserved pair, including file hashes, before ordering.
-    # Sorting remains stable for the two intentional variants of one tile.
+    # Each area subfolder is sorted on its own; the result lists every tile in
+    # layer-panel order.
     _sanborn_check_group_contents(group, {})
+    order = []
+    for container, _ in _sanborn_containers(group):
+        order.extend(_sanborn_order_nodes(project, container))
+    return order
+
+
+def _sanborn_folder_order(group):
+    return [
+        (folder_name or group.name(), [_sanborn_tile_number(node.name()) for node in container.children()])
+        for container, folder_name in _sanborn_containers(group)
+    ]
+
+
+def _sanborn_sheet_nodes(group):
+    return [node for container, _ in _sanborn_containers(group) for node in container.children()]
+
+
+def _sanborn_order_nodes(project, group):
+    # Sorting remains stable for the two intentional variants of one tile.
     numbered = []
     for node in group.children():
         if not isinstance(node, QgsLayerTreeLayer) or not isinstance(node.layer(), QgsRasterLayer):
@@ -1390,13 +1495,14 @@ def prepare_sanborn_layers():
                 rollback["added_layer_ids"].append(layer.id())
                 imported.append(tile)
             layer.setName(item["layer_name"])
-            node = _sanborn_ensure_single_group_node(root, group, layer)
+            container = _sanborn_sheet_container(group, tile)
+            node = _sanborn_ensure_single_group_node(root, container, layer)
             _sanborn_apply_style(layer)
             node.setExpanded(False)
 
         order = _sanborn_numeric_order(project, group)
         group.setExpanded(True)
-        for node in group.children():
+        for node in _sanborn_sheet_nodes(group):
             node.setExpanded(False)
 
         # Postconditions: exact group position, one registry entry and one group
@@ -1407,8 +1513,12 @@ def prepare_sanborn_layers():
         root_children = root.children()
         if root_children.index(group) != root_children.index(index_node) + 1:
             _sanborn_fail("Sanborn group is not immediately beneath the exact index layer")
-        if order != sorted(order):
-            _sanborn_fail("Sanborn group is not in numeric tile order")
+        folder_order = _sanborn_folder_order(group)
+        for folder_name, tiles in folder_order:
+            if tiles != sorted(tiles):
+                _sanborn_fail("{} is not in numeric tile order".format(folder_name))
+        if any(node.isExpanded() for node in _sanborn_sheet_nodes(group)):
+            _sanborn_fail("a Sanborn sheet legend remained expanded")
         for item in PLAN["tiles"]:
             path = _sanborn_canonical(item["path"])
             matches = [
@@ -1420,8 +1530,18 @@ def prepare_sanborn_layers():
                 _sanborn_fail("tile path is not registered exactly once: " + path)
             layer = matches[0]
             nodes = [node for node in root.findLayers() if node.layerId() == layer.id()]
-            if len(nodes) != 1 or nodes[0].parent() is not group:
-                _sanborn_fail("tile does not have exactly one tree node in the Sanborn group")
+            expected_folder = _sanborn_subfolder_name(int(item["tile"]))
+            parent = nodes[0].parent() if len(nodes) == 1 else None
+            if (
+                parent is None
+                or (expected_folder is None and parent is not group)
+                or (expected_folder is not None and (
+                    parent.parent() is not group or parent.name() != expected_folder
+                ))
+            ):
+                _sanborn_fail(
+                    "tile does not have exactly one tree node in its Sanborn subfolder"
+                )
             if nodes[0].isExpanded():
                 _sanborn_fail("tile layer node remained expanded: " + layer.name())
             _sanborn_verify_style(layer)
@@ -1442,6 +1562,7 @@ def prepare_sanborn_layers():
             "group_action": group_action,
             "group_expanded": group.isExpanded(),
             "tile_order": order,
+            "folder_order": dict(folder_order),
             "imported_tiles": imported,
             "reused_tiles": reused,
             "child_nodes_collapsed": True,

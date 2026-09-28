@@ -243,7 +243,7 @@ The QGIS result must be:
 
 - exact root-level index: `1911 Sanborn Index Orthorectified — OSM 9-point fine-tuned (2026-07-14)`;
 - root-level folder `1911 ATLANTA SANBORNS` immediately below that index, with the index outside it;
-- exactly one layer node for each finished raster, in ascending printed tile-number order;
+- exactly one layer node for each finished raster, in its area subfolder (`NORTHEAST ATL`, `NORTHWEST ATL`, `SOUTHEAST ATL`, `SOUTHWEST ATL`), in ascending printed tile-number order within that subfolder;
 - folder expanded and every raster row collapsed, hiding the Red, Green, and Blue legend rows;
 - Brightness 0, Gamma 1.0, Contrast 0 (no channel stretch), global opacity 100%, and band 4 as alpha;
 - protected project file unchanged and no project-save call.

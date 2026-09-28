@@ -129,7 +129,7 @@ These rules override convenience, speed, and every optional instruction in this 
 The protected project is:
 
 ```text
-/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/JLS Master Map File.qgz
+/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/JLS Master Map File with 1911 Sanborns.qgz
 ```
 
 Rules:
@@ -255,7 +255,7 @@ The generated code verifies all inputs, inserts a cloned replacement group befor
 1. Confirm the index is at the root level and the `1911 ATLANTA SANBORNS` folder is immediately beneath it.
 2. In the Data Source Manager, select the one intended GeoTIFF and click **Add exactly once**. The Add button may give no visible acknowledgement and the dialog may remain open; do not click repeatedly.
 3. Close the Data Source Manager and verify that exactly one new layer exists.
-4. Move that layer into `1911 ATLANTA SANBORNS` and place it in ascending printed tile-number order.
+4. Move that layer into its area subfolder of `1911 ATLANTA SANBORNS` (below 100 `NORTHWEST ATL`, below 300 `NORTHEAST ATL`, below 400 `SOUTHWEST ATL`, otherwise `SOUTHEAST ATL`) and place it in ascending printed tile-number order within that subfolder.
 5. Collapse the new raster's layer-tree entry so its RGB band legend rows are closed. Keep the `1911 ATLANTA SANBORNS` folder itself expanded unless Joel requests otherwise.
 6. If duplicate layer entries appeared, keep one correctly placed entry and remove only the duplicates. Do not delete the GeoTIFF from disk.
 
@@ -264,11 +264,17 @@ The approved ordering pattern is:
 ```text
 1911 Sanborn Index Orthorectified — OSM 9-point fine-tuned (2026-07-14)
 1911 ATLANTA SANBORNS/
-  Tile 196
-  Tile 236
-  Tile 474
-  Tile 485
-  ...additional sheets in ascending numeric order...
+  NORTHEAST ATL/
+    Tile 196
+    Tile 236
+  NORTHWEST ATL/
+    Tile 4
+    Tile 11
+  SOUTHEAST ATL/
+    Tile 474
+    Tile 485
+  SOUTHWEST ATL/
+    ...each subfolder in ascending numeric order...
 1921 Atlanta Kauffman Map_modified
 ...
 ```
@@ -299,7 +305,7 @@ For the completed 1911 example:
 
 ```text
 SOURCE_RASTER=/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/1911 Sanborn Map/! 1911 Sanborn 486 Shmuel Yankel B.tif
-PROTECTED_PROJECT=/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/JLS Master Map File.qgz
+PROTECTED_PROJECT=/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/JLS Master Map File with 1911 Sanborns.qgz
 OUTPUT_DIRECTORY=/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/1911 Sanborn Map
 OUTPUT_RASTER=/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/1911 Sanborn Map/! 1911 Sanborn 486 Shmuel Yankel B_georeferenced_v2.tif
 GCP_FILE=/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/1911 Sanborn Map/! 1911 Sanborn 486 Shmuel Yankel B_cardinal_v2.points
@@ -796,7 +802,7 @@ First prefer the schema-checked import manifest and `tools/sanborn_qgis.py`. If 
 Then verify the layer-tree structure, not only visibility:
 
 - exactly one copy of the new raster is present;
-- it is inside `1911 ATLANTA SANBORNS`, not at the root or inside any unrelated folder;
+- it is inside its area subfolder of `1911 ATLANTA SANBORNS`, not loose in the group, at the root or inside any unrelated folder;
 - the folder is immediately beneath the root-level 1911 index, and the index is not inside it;
 - individual sheets are in ascending printed tile-number order;
 - its Global Opacity is 100%.
@@ -878,7 +884,7 @@ Example macOS command:
 stat -f '%N | %z bytes | modified %Sm' \
   '/path/to/output_georeferenced.tif' \
   '/path/to/control_points.points' \
-  '/path/to/JLS Master Map File.qgz'
+  '/path/to/JLS Master Map File with 1911 Sanborns.qgz'
 ```
 
 If GDAL tools are available, also inspect:
@@ -1145,7 +1151,7 @@ The job is complete only when every item below is true.
 - [ ] QGIS remains open if the in-memory project is dirty.
 - [ ] A schema-3 QGIS import manifest exists and binds the raster, ledger, source, immutable controls, review and approval records, all eight packet artifacts, local references, renderer/font inputs, and seed provenance.
 - [ ] QGIS whole-project same-number/different-path preflight passed before mutation; if a live preparation failed, prior layer-tree and renderer state was restored.
-- [ ] Exactly one new raster layer is inside `1911 ATLANTA SANBORNS` in ascending tile-number order.
+- [ ] Exactly one new raster layer is inside its area subfolder of `1911 ATLANTA SANBORNS`, in ascending tile-number order within that subfolder.
 - [ ] Every raster entry inside `1911 ATLANTA SANBORNS` is collapsed so no RGB band lists are left open.
 - [ ] `1911 ATLANTA SANBORNS` is immediately beneath the root-level 1911 index, and the index remains outside the folder.
 

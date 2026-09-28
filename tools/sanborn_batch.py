@@ -69,7 +69,9 @@ DEFAULT_INDEX_JSON = BATCH_DIR / "index" / "tile-location-seeds.json"
 DEFAULT_INDEX_CACHE = BATCH_DIR / "index" / "cache"
 LOCK_DIR = BATCH_DIR / "locks"
 DEFAULT_ALIASES = PROJECT_ROOT / "config" / "street_aliases.json"
-PROTECTED_PROJECT = PROJECT_ROOT.parent / "JLS Master Map File.qgz"
+PROTECTED_PROJECT = PROJECT_ROOT.parent / "JLS Master Map File with 1911 Sanborns.qgz"
+# The master before Joel re-saved it on 2026-09-28; older ledgers name it.
+FORMER_PROTECTED_PROJECTS = (PROJECT_ROOT.parent / "JLS Master Map File.qgz",)
 USER_AGENT = "Joel-Silverman-Sanborn-Bot/1.0 (single-sheet historical map research)"
 DATABASE_SCHEMA_VERSION = 4
 MAX_TARGET_SEED_DISTANCE = 250.0
@@ -2918,7 +2920,9 @@ def _verify_final_pair(
         fail("The final GeoTIFF extent does not match the approved affine footprint.")
 
     protected = record.get("protected_project", {})
-    if Path(str(protected.get("path", ""))).resolve() != PROTECTED_PROJECT.resolve():
+    if Path(str(protected.get("path", ""))).resolve() not in {
+        path.resolve() for path in (PROTECTED_PROJECT, *FORMER_PROTECTED_PROJECTS)
+    }:
         fail("The final ledger does not identify the protected QGIS project.")
     before = protected.get("mtime_ns_before")
     after = protected.get("mtime_ns_after")

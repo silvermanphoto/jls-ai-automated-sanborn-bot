@@ -2,7 +2,7 @@
 
 > Open findings from the 2026-09 code review: ~/.claude/overseer/reviews/2026-09/jls-ai-automated-sanborn-bot.md and ~/.claude/overseer/reviews/2026-09/sanborn-comparison.md. Mention them to Joel at the start of each session; delete this line once none are open.
 
-Use the local-first version 1.21 workflow. Read `AGENTS.md` for standing safety rules, `LOCAL BATCH ENGINE.md` for commands, and `AI AUTOMATED SANBORN BOT - MASTER INSTRUCTIONS.md` for the full evidence policy. Keep explanations in plain English.
+Use the local-first version 1.22 workflow. Read `AGENTS.md` for standing safety rules, `LOCAL BATCH ENGINE.md` for commands, and `AI AUTOMATED SANBORN BOT - MASTER INSTRUCTIONS.md` for the full evidence policy. Keep explanations in plain English.
 
 ## Public software, private data
 
@@ -11,7 +11,7 @@ Joel explicitly confirmed on 2026-09-25 that this engine should remain public fo
 ## Operating boundary
 
 - Joel's Mac performs downloads, OCR, street matching, local OSM and Kauffman rendering, affine warping, checksums, and audits. ChatGPT or Joel reviews street identity, three source centers, non-control alignment, and the final contact sheet.
-- Never overwrite a source scan. Never save or close `/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/JLS Master Map File.qgz` unless Joel explicitly authorizes it in the same turn.
+- Never overwrite a source scan. Never save or close `/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/JLS Master Map File with 1911 Sanborns.qgz` unless Joel explicitly authorizes it in the same turn.
 - Run `python3 tools/sanborn_batch.py doctor` before production. `gdal_edit.py` is required because it embeds derivation evidence inside each finished GeoTIFF.
 - The normal parallel setting is three jobs. `sanborn_parallel.py` uses one shared pacer to keep actual worker launches at least two seconds apart by default; each one-tile child receives zero internal delay.
 
@@ -48,7 +48,7 @@ Reviewer and note are mandatory. `--replace-existing` deliberately supersedes an
 - Rebuilding a verified fixed-name tile first archives its raster, ledger, manifest, and packet evidence. Crash recovery may use only an explicitly unfinished retirement record bound to the exact paths and hashes; never restore an arbitrary older archive by matching filenames.
 - Process-local, stat-aware hash caching may avoid rereading unchanged shared evidence. Any canonical-path, device, inode, size, modification-time, or change-time difference forces a new hash; a mid-read change stops the run.
 - A schema-3 QGIS manifest binds the raster, ledger, source, immutable controls, review and approval records, all eight packet artifacts, OSM and Kauffman inputs, renderer/font inputs, and seed provenance.
-- The exact root-level index remains outside `1911 ATLANTA SANBORNS`. Keep that group immediately below the index, expanded, with tiles in printed-number order and every raster child collapsed so RGB legend rows stay closed.
+- The exact root-level index remains outside `1911 ATLANTA SANBORNS`. Keep that group immediately below the index and expanded. Since 2026-09-28 its sheets live in four area subfolders, in this order: `NORTHEAST ATL` (volume 2, tiles 100–299), `NORTHWEST ATL` (volume 1, below 100), `SOUTHEAST ATL` (volume 4, 400 and up), `SOUTHWEST ATL` (volume 3, 300–399). Each sheet goes in its subfolder in printed-number order, and every sheet layer is collapsed so RGB legend rows stay closed.
 - Every completed raster uses opacity 1.0, Brightness 0, Gamma 1.0, Contrast 0 (no channel stretch), and alpha band 4. Generated QGIS code must perform duplicate preflight and rollback and must contain no project-save call.
 - Earlier live Tile 236 evidence used an equivalent hash-bound plan, not a live schema-3 manifest. The present schema-3 revision was exercised in the installed QGIS 3.42.1 runtime with the real index and synthetic tiles; the unavailable QGIS MCP connection prevented a current run against Joel's open protected project. Keep those claims separate.
 

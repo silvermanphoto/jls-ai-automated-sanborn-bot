@@ -52,6 +52,31 @@ class Collection:
     osm_database: Path
     crs: str = "EPSG:3857"
     style: dict[str, Any] = field(default_factory=lambda: dict(STANDARD_STYLE))
+    # Earlier file names of the same master project. Ledgers written before a
+    # rename still name the file that was protected at the time; they are
+    # accepted as history, never used as the live project.
+    former_projects: tuple[Path, ...] = ()
+    # Subfolders inside the group, in the order they appear in QGIS, each with
+    # the printed tile numbers it holds (first, last; last None = no limit).
+    # Empty means sheet layers sit directly in the group.
+    subfolders: tuple[tuple[str, int, int | None], ...] = ()
+
+    def names_protected_project(self, path: str | Path) -> bool:
+        """True when a recorded path is this master project, now or before a rename."""
+        resolved = Path(path).expanduser().resolve()
+        return any(
+            resolved == candidate.resolve()
+            for candidate in (self.project, *self.former_projects)
+        )
+
+    def subfolder_for(self, tile: int) -> str | None:
+        """The subfolder of the group that holds this printed tile number."""
+        if not self.subfolders:
+            return None
+        for name, first, last in self.subfolders:
+            if tile >= first and (last is None or tile <= last):
+                return name
+        raise ValueError(f"Tile {tile} falls outside every {self.group_name} subfolder.")
 
     def layer_name(self, tile: int, intersection: str | None = None) -> str:
         """The name Joel sees in the QGIS layer list.
@@ -70,8 +95,19 @@ COLLECTIONS: dict[str, Collection] = {
         key="atlanta-1911",
         city="Atlanta",
         year=1911,
-        project=MAP_BOOK / "JLS Master Map File.qgz",
+        # Joel re-saved the master under this name on 2026-09-28.
+        project=MAP_BOOK / "JLS Master Map File with 1911 Sanborns.qgz",
+        former_projects=(MAP_BOOK / "JLS Master Map File.qgz",),
         group_name="1911 ATLANTA SANBORNS",
+        # Joel's layout from 2026-09-28: one folder per volume, named by area.
+        # Volume 1 holds tiles 1-90, volume 2 151-252, volume 3 301-325 and
+        # volume 4 400 upward; the bounds below follow his rule by number.
+        subfolders=(
+            ("NORTHEAST ATL", 100, 299),
+            ("NORTHWEST ATL", 0, 99),
+            ("SOUTHEAST ATL", 400, None),
+            ("SOUTHWEST ATL", 300, 399),
+        ),
         index_layer_name=(
             "1911 Sanborn Index Orthorectified — OSM 9-point fine-tuned (2026-07-14)"
         ),

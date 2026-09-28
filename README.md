@@ -2,7 +2,7 @@
 
 Downloads the 1911 Atlanta Sanborn fire insurance maps from the Library of Congress, works
 out where each sheet belongs on the ground, and prepares it as a georeferenced layer for
-QGIS. Current system version: **1.21**.
+QGIS. Current system version: **1.22**.
 
 Historic Sanborn maps have been scanned and publicly readable for years without being
 georeferenced, so until GIS tools came along, historical study meant holding a picture of a map beside a real map. Even with GIS georeferencing, pinning an old map to a current map accurately takes hours per map.This repository holds a local system that automates the placement of Sanborns for Atlanta.
@@ -137,13 +137,14 @@ controls, review and approval records, every packet artifact, the OSM and Kauffm
 renderer and font inputs, and the index-seed provenance before anything is added, and it rolls
 back added layers if a later step fails.
 
-Approved sheets go in printed-number order inside `1911 ATLANTA SANBORNS`, which sits
-immediately below the orthorectified index layer and outside it. Every completed raster renders
+Approved sheets go inside `1911 ATLANTA SANBORNS`, each in its area subfolder (`NORTHEAST ATL`,
+`NORTHWEST ATL`, `SOUTHEAST ATL`, `SOUTHWEST ATL`, chosen by printed tile number) and in
+printed-number order within it. The group sits immediately below the orthorectified index layer and outside it. Every completed raster renders
 at 100% opacity with Brightness 0, Gamma 1.0, Contrast 0 (no channel stretch), and band 4 as a real alpha band,
 with the RGB band rows collapsed. The generated code contains no project-save call, and it
 verifies that the protected `.qgz` modification time did not change.
 
-The protected project at `JLS Master Map File.qgz` is never saved or closed by automation.
+The protected project at `JLS Master Map File with 1911 Sanborns.qgz` is never saved or closed by automation.
 
 ## What it needs
 

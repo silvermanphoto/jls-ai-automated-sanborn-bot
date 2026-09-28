@@ -17,18 +17,32 @@ Use the master instruction manual in this folder as the operating source of trut
 ## Safety invariants
 
 - Never overwrite a source JP2, TIFF, point file, or accepted georeferenced output.
-- Never save or close `/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/JLS Master Map File.qgz` unless Joel explicitly authorizes it in that turn.
+- Never save or close `/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/JLS Master Map File with 1911 Sanborns.qgz` unless Joel explicitly authorizes it in that turn. (2026-09-28: Joel re-saved the master under this name; the former `JLS Master Map File.qgz` is history, named only by older ledgers.)
 - Keep Global Opacity at 100%. Use a real alpha band for empty warp areas; never make black map ink transparent.
 - Apply QGIS Layer Rendering values Brightness 0, Gamma 1.0, and Contrast 0; disable channel stretching to completed Sanborn rasters.
 - Immediately collapse every completed Sanborn raster's layer-tree entry after loading it so its Band 1 (Red), Band 2 (Green), and Band 3 (Blue) legend rows stay closed by default.
 - Use exactly three strong, distant, non-collinear controls by default. OpenStreetMap is modern ground truth; Kauffman is the historical cross-check.
 - Require the fully local, hash-locked OSM and Kauffman packet before approval. Live QGIS is not required for reference review.
 - Treat the georeferenced-index location as an independent wrong-neighborhood safeguard, never as a final control point.
-- Place each finished raster exactly once inside the root-level `1911 ATLANTA SANBORNS` folder in ascending printed tile-number order. Keep that folder immediately beneath the exact 1911 index layer, and keep the index outside it.
+- Place each finished raster exactly once inside the root-level `1911 ATLANTA SANBORNS` folder, in its area subfolder, in ascending printed tile-number order within that subfolder. Since 2026-09-28 sheet layers live in four area subfolders, in this order: `NORTHEAST ATL` (volume 2, tiles 100–299), `NORTHWEST ATL` (volume 1, tiles below 100), `SOUTHEAST ATL` (volume 4, tiles 400 and up) and `SOUTHWEST ATL` (volume 3, tiles 300–399). The importer creates a missing subfolder in its fixed position and refuses a sheet sitting loose in the group or in the wrong subfolder. Keep every sheet's legend collapsed. Keep `1911 ATLANTA SANBORNS` immediately beneath the exact 1911 index layer, and keep the index outside it.
 - Before warping, render a labeled full-sheet proof showing all three source GCP crosshairs exactly centered on their named intersections.
 - Reject a three-point affine fit when its scale ratio exceeds `1.15` or its transformed axes fall outside `85–95°`. A real historical-sheet exception requires `--allow-distortion`, a nonblank evidence note, agreement in the local OSM and Kauffman packet, and hash-locking of the flag, note, and exact warnings.
 
 ## Lessons learned
+
+### 2026-09-28 — Version 1.22, area subfolders and the renamed master
+
+- Joel re-saved the master as `JLS Master Map File with 1911 Sanborns.qgz` and split `1911 ATLANTA SANBORNS` into four
+  area subfolders. The importer reads the folder names and tile ranges from the
+  collection record in `tools/sanborn_collections.py`, sorts each subfolder on its own,
+  and collapses every sheet legend in every subfolder.
+- 46 existing georeference ledgers name the former master file. They record which
+  file was protected when they were written, so ledger checks accept either name;
+  only the new name is ever the live project.
+- The rollback snapshot must treat a sheet inside any subfolder as inside the group.
+  Checking only the group's direct children would record those nodes as outside the
+  group and restore duplicates on rollback.
+
 
 ### 2026-09-27 — Version 1.20, `doctor` runs the tools it reports
 

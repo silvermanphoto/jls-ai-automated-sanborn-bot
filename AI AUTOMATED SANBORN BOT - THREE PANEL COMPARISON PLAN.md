@@ -266,7 +266,7 @@ The comparison workspace must:
 
 - treat original scans and Kauffman as read-only;
 - write every derivative under a new filename;
-- operate without saving `JLS Master Map File.qgz`;
+- operate without saving `JLS Master Map File with 1911 Sanborns.qgz`;
 - keep Global Opacity at 100%; comparisons use visibility blinking or separate panes;
 - create destination alpha for warped edges and preserve genuine black ink;
 - keep house numbers out of the control logic because Atlanta renumbered in 1927;
@@ -297,7 +297,7 @@ Verified environment:
 
 ```text
 QGIS_VERSION=3.42.1-Münster
-PROJECT_FILE=/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/JLS Master Map File.qgz
+PROJECT_FILE=/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/JLS Master Map File with 1911 Sanborns.qgz
 PROJECT_CRS=EPSG:3857
 PROJECT_LAYER_COUNT=42
 PROJECT_DIRTY_IN_MEMORY=true

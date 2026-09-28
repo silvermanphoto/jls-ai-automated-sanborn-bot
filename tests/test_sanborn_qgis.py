@@ -282,16 +282,36 @@ class FakeLayerNode:
     def clone(self):
         return FakeLayerNode(self._layer, self._name)
 
+    def setExpanded(self, expanded):
+        self._expanded = expanded
+
+    def isExpanded(self):
+        return getattr(self, "_expanded", True)
+
 
 class FakeGroup:
-    def __init__(self, children=None, parent=None):
+    def __init__(self, children=None, parent=None, name=""):
         self._children = list(children or [])
         self._parent = parent
+        self._name = name
         for child in self._children:
             child._parent = self
 
+    def name(self):
+        return self._name
+
     def children(self):
         return self._children
+
+    def insertGroup(self, index, name):
+        group = FakeGroup(name=name)
+        self.insertChildNode(index, group)
+        return group
+
+    def insertLayer(self, index, layer):
+        node = FakeLayerNode(layer)
+        self.insertChildNode(index, node)
+        return node
 
     def parent(self):
         return self._parent
@@ -806,6 +826,131 @@ class SanbornQgisPlanTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "layer registry changed"):
             helpers["_sanborn_numeric_order"](project, group)
         self.assertTrue(bridge.isEnabled())
+
+    def _quadrant_helpers(self):
+        helpers = generated_helper_namespace()
+        with tempfile.TemporaryDirectory() as temp:
+            plan = build_plan([write_manifest(Path(temp), 154)])
+        helpers["PLAN"]["subfolders"] = plan["subfolders"]
+        return helpers
+
+    @staticmethod
+    def _sheet(tile, layer_id=None):
+        layer = FakeRasterLayer(f"/tmp/Sanborn 1911 -- Tile {tile}_georeferenced.tif",
+                                f"Sanborn 1911 - Tile {tile}", layer_id or f"tile-{tile}")
+        return FakeLayerNode(layer)
+
+    def test_master_project_is_the_file_joel_resaved_on_2026_09_28(self):
+        import sanborn_batch
+        self.assertEqual(PROTECTED_PROJECT.name, "JLS Master Map File with 1911 Sanborns.qgz")
+        self.assertEqual(sanborn_batch.PROTECTED_PROJECT, PROTECTED_PROJECT)
+        collection = sanborn_qgis.COLLECTION
+        self.assertTrue(collection.names_protected_project(PROTECTED_PROJECT))
+        # Ledgers written before the rename name the former file as history.
+        self.assertTrue(collection.names_protected_project(
+            PROTECTED_PROJECT.with_name("JLS Master Map File.qgz")))
+        self.assertFalse(collection.names_protected_project(
+            PROTECTED_PROJECT.with_name("Some Other Project.qgz")))
+
+    def test_quadrant_subfolder_is_chosen_by_printed_tile_number(self):
+        helpers = self._quadrant_helpers()
+        self.assertEqual([folder["name"] for folder in helpers["PLAN"]["subfolders"]],
+                         ["NORTHEAST ATL", "NORTHWEST ATL", "SOUTHEAST ATL", "SOUTHWEST ATL"])
+        expected = {1: "NORTHWEST ATL", 90: "NORTHWEST ATL", 99: "NORTHWEST ATL",
+                    100: "NORTHEAST ATL", 151: "NORTHEAST ATL", 252: "NORTHEAST ATL",
+                    299: "NORTHEAST ATL", 300: "SOUTHWEST ATL", 301: "SOUTHWEST ATL",
+                    325: "SOUTHWEST ATL", 399: "SOUTHWEST ATL", 400: "SOUTHEAST ATL",
+                    486: "SOUTHEAST ATL", 505: "SOUTHEAST ATL"}
+        for tile, folder in expected.items():
+            with self.subTest(tile=tile):
+                self.assertEqual(helpers["_sanborn_subfolder_name"](tile), folder)
+                self.assertEqual(sanborn_qgis.COLLECTION.subfolder_for(tile), folder)
+
+    def test_sheet_is_placed_into_its_existing_quadrant_folder(self):
+        helpers = self._quadrant_helpers()
+        northeast = FakeGroup([self._sheet(236)], name="NORTHEAST ATL")
+        southeast = FakeGroup([self._sheet(486)], name="SOUTHEAST ATL")
+        group = FakeGroup([northeast, southeast], name=GROUP_NAME)
+        root = FakeRoot([group])
+        incoming = self._sheet(495).layer()
+        container = helpers["_sanborn_sheet_container"](group, 495)
+        self.assertIs(container, southeast)
+        node = helpers["_sanborn_ensure_single_group_node"](root, container, incoming)
+        self.assertIs(node.parent(), southeast)
+        self.assertEqual(group.children(), [northeast, southeast])
+        helpers["_sanborn_check_group_contents"](group, {495: {"path": incoming.source()}})
+
+    def test_missing_quadrant_folders_are_created_in_fixed_order(self):
+        helpers = self._quadrant_helpers()
+        group = FakeGroup(name=GROUP_NAME)
+        for tile in (486, 12, 310, 236):
+            container = helpers["_sanborn_sheet_container"](group, tile)
+            container.insertChildNode(0, self._sheet(tile))
+        self.assertEqual([folder.name() for folder in group.children()],
+                         ["NORTHEAST ATL", "NORTHWEST ATL", "SOUTHEAST ATL", "SOUTHWEST ATL"])
+        self.assertIs(helpers["_sanborn_sheet_container"](group, 20), group.children()[1])
+        self.assertEqual(len(group.children()), 4)
+        helpers["_sanborn_check_group_contents"](group, {})
+
+    def test_sheets_are_ordered_numerically_within_each_quadrant_folder(self):
+        helpers = self._quadrant_helpers()
+        northeast = FakeGroup([self._sheet(tile) for tile in (252, 151, 236)], name="NORTHEAST ATL")
+        northwest = FakeGroup([self._sheet(tile) for tile in (90, 4)], name="NORTHWEST ATL")
+        southeast = FakeGroup([self._sheet(tile) for tile in (505, 486, 495)], name="SOUTHEAST ATL")
+        group = FakeGroup([northeast, northwest, southeast], name=GROUP_NAME)
+        layers = [node.layer() for folder in group.children() for node in folder.children()]
+        bridge = FakeBridge()
+        project = types.SimpleNamespace(mapLayers=lambda: {layer.id(): layer for layer in layers},
+                                        layerTreeRegistryBridge=lambda: bridge)
+        order = helpers["_sanborn_numeric_order"](project, group)
+        self.assertEqual(order, [151, 236, 252, 4, 90, 486, 495, 505])
+        self.assertEqual(helpers["_sanborn_folder_order"](group), [
+            ("NORTHEAST ATL", [151, 236, 252]),
+            ("NORTHWEST ATL", [4, 90]),
+            ("SOUTHEAST ATL", [486, 495, 505]),
+        ])
+        self.assertEqual(group.children(), [northeast, northwest, southeast])
+        self.assertTrue(bridge.isEnabled())
+
+    def test_every_sheet_legend_in_every_quadrant_folder_is_collapsed(self):
+        helpers = self._quadrant_helpers()
+        northeast = FakeGroup([self._sheet(151), self._sheet(236)], name="NORTHEAST ATL")
+        southwest = FakeGroup([self._sheet(301)], name="SOUTHWEST ATL")
+        group = FakeGroup([northeast, southwest], name=GROUP_NAME)
+        sheets = helpers["_sanborn_sheet_nodes"](group)
+        self.assertEqual({node.layerId() for node in sheets}, {"tile-151", "tile-236", "tile-301"})
+        with tempfile.TemporaryDirectory() as temp:
+            code = generate_pyqgis_code(build_plan([write_manifest(Path(temp), 154)]))
+        prepare = code.split("def prepare_sanborn_layers():", 1)[1]
+        self.assertIn("for node in _sanborn_sheet_nodes(group):\n            node.setExpanded(False)", prepare)
+        self.assertIn("a Sanborn sheet legend remained expanded", prepare)
+
+    def test_quadrant_layout_rejects_misplaced_sheets_and_unknown_folders(self):
+        cases = {
+            "loose sheet": lambda: FakeGroup([self._sheet(236)], name=GROUP_NAME),
+            "wrong folder": lambda: FakeGroup(
+                [FakeGroup([self._sheet(12)], name="NORTHEAST ATL")], name=GROUP_NAME),
+            "unknown folder": lambda: FakeGroup(
+                [FakeGroup([self._sheet(12)], name="MIDTOWN")], name=GROUP_NAME),
+            "folders out of order": lambda: FakeGroup(
+                [FakeGroup(name="SOUTHEAST ATL"), FakeGroup(name="NORTHEAST ATL")], name=GROUP_NAME),
+            "nested folder": lambda: FakeGroup(
+                [FakeGroup([FakeGroup(name="extra")], name="NORTHEAST ATL")], name=GROUP_NAME),
+        }
+        pattern = "directly in the Sanborn group|belongs in subfolder|unexpected subfolder|out of order|subgroup"
+        for label, build in cases.items():
+            with self.subTest(label):
+                with self.assertRaisesRegex(RuntimeError, pattern):
+                    self._quadrant_helpers()["_sanborn_check_group_contents"](build(), {})
+
+    def test_rollback_treats_sheets_inside_quadrant_folders_as_inside_the_group(self):
+        helpers = generated_helper_namespace()
+        sheet = self._sheet(236)
+        folder = FakeGroup([sheet], name="NORTHEAST ATL")
+        group = FakeGroup([folder], name=GROUP_NAME)
+        outside = FakeGroup([self._sheet(236)])
+        self.assertTrue(helpers["_sanborn_is_within"](sheet, group))
+        self.assertFalse(helpers["_sanborn_is_within"](outside.children()[0], group))
 
     def test_pair_requires_explicit_record_and_rejects_extra_or_repeated_variants(self):
         for change in ("no-record", "third-variant", "same-path", "arbitrary-other-tile"):
