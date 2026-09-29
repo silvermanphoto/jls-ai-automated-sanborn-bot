@@ -42,19 +42,25 @@ def run_clean(rgb):
     return tuple(result)
 
 
+def look(value, i, mx):
+    """The v1.26 look for one channel with literal numbers (fitted to Joel's sheet 151 example, 2026-09-29)."""
+    black, white, gamma = ((28.4, 182.8, 0.793), (0.0, 163.8, 1.358), (0.0, 183.3, 1.144))[i]
+    v = 255 * np.clip((value - black) / (white - black), 0, 1) ** gamma
+    return v * (1 - 0.8 * np.clip((105.0 - mx) / 45.0, 0, 1))
+
+
 def levels_only(rgb):
-    """The levels step alone (paper weight 0), from the approved numbers 46 / 1.56 / 205."""
-    return tuple(
-        int((np.clip((np.uint8(value) - 46.0) / 159, 0, 1) ** 0.641) * 255) for value in rgb
-    )
+    """The look alone (paper weight 0)."""
+    return tuple(int(look(np.float32(value), i, np.float32(max(rgb)))) for i, value in enumerate(rgb))
 
 
 def proven_clean(in_ar, out_ar, band):
-    """The formula exactly as proven in QGIS on 2026-09-29, with literal numbers."""
+    """The v1.26 formula with literal numbers."""
     r, g, b = (a.astype(np.float32) for a in in_ar[:3])
     mx = np.maximum(np.maximum(r, g), b); mn = np.minimum(np.minimum(r, g), b)
     paper = np.clip((30 - (mx - mn)) / 12, 0, 1) * np.clip((mx - 140) / 25, 0, 1)
-    lev = (np.clip((in_ar[int(band) - 1] - 46.0) / 159, 0, 1) ** 0.641) * 255
+    i = int(band) - 1
+    lev = look((r, g, b)[i], i, mx)
     out_ar[:] = lev + (255 - lev) * paper
 
 
@@ -62,12 +68,11 @@ class PixelFunctionTests(unittest.TestCase):
     def test_dingy_paper_turns_white(self):
         self.assertEqual(run_clean((197, 190, 181)), (255, 255, 255))
 
-    def test_dark_ink_gets_levels_only_and_no_paper_lift(self):
-        # Paper weight is 0 for ink, so the output is the levels curve alone.
-        # Midtone 1.56 lightens this brown-black ink: 74 -> 83, 54 -> 37, 49 -> 20.
+    def test_dark_ink_reads_black(self):
+        # Joel 2026-09-29: crisp deep black text. Paper weight is 0 for ink; the toe takes it near black.
         self.assertEqual(run_clean((74, 54, 49)), levels_only((74, 54, 49)))
-        self.assertEqual(run_clean((74, 54, 49)), (83, 37, 20))
-        self.assertEqual(run_clean((30, 30, 30)), (0, 0, 0))
+        self.assertTrue(all(v <= 45 for v in run_clean((74, 54, 49))))
+        self.assertTrue(all(v <= 12 for v in run_clean((50, 45, 45))))
 
     def test_pink_and_yellow_fills_keep_their_colour(self):
         for rgb in ((162, 126, 132), (166, 141, 92)):
@@ -85,6 +90,20 @@ class PixelFunctionTests(unittest.TestCase):
                                 band=str(band), paper=b"179,171,158")
             out.append(int(arr[0, 0]))
         self.assertEqual(tuple(out), (255, 255, 255))
+
+    def test_strength_deepens_a_pale_pink(self):
+        # A pale printing's pink is deepened toward sheet 151's density; paper stays white.
+        def clean_with(rgb, **kw):
+            out = []
+            for band in (1, 2, 3):
+                arr = np.zeros((1, 1), dtype=np.uint8)
+                sanborn_paper.clean([np.full((1, 1), v, np.uint8) for v in rgb], arr, 0, 0, 1, 1, 1, 1, 0, None,
+                                    band=str(band), **kw)
+                out.append(int(arr[0, 0]))
+            return tuple(out)
+        plain, deep = clean_with((163, 127, 145)), clean_with((163, 127, 145), strength=b"1.3")
+        self.assertTrue(all(d < p for d, p in zip(deep, plain)))
+        self.assertEqual(clean_with((178, 178, 178), strength=b"1.3"), (255, 255, 255))
 
     def test_without_a_paper_reading_the_formula_is_unchanged(self):
         rng = np.random.default_rng(29)
@@ -129,6 +148,9 @@ class RecipeFileTests(unittest.TestCase):
         self.patch.start()
         self.paper_patch = mock.patch.object(sanborn_paper, "measure_paper", return_value=(178, 178, 178))
         self.paper_patch.start()
+        self.strength_patch = mock.patch.object(sanborn_paper, "measure_strength", return_value=1.0)
+        self.strength_patch.start()
+        self.addCleanup(self.strength_patch.stop)
 
     def tearDown(self):
         self.paper_patch.stop()

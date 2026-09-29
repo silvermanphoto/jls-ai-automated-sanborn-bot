@@ -1118,6 +1118,8 @@ class BatchSafetyTests(unittest.TestCase):
             sanborn_batch.sanborn_paper, "read_raster_facts", return_value=SHEET_FACTS
         ), mock.patch.object(
             sanborn_batch.sanborn_paper, "measure_paper", return_value=(178, 178, 178)
+        ), mock.patch.object(
+            sanborn_batch.sanborn_paper, "measure_strength", return_value=1.0
         ), mock.patch.object(sanborn_batch.subprocess, "run") as run:
             self.assertEqual(sanborn_batch.cmd_finish(args), 0)
 
@@ -1134,6 +1136,8 @@ class BatchSafetyTests(unittest.TestCase):
             sanborn_batch.sanborn_paper, "read_raster_facts", return_value=SHEET_FACTS
         ), mock.patch.object(
             sanborn_batch.sanborn_paper, "measure_paper", return_value=(178, 178, 178)
+        ), mock.patch.object(
+            sanborn_batch.sanborn_paper, "measure_strength", return_value=1.0
         ):
             sanborn_batch.sanborn_paper.verify_vrt(recipe, final_output)
         self.assertEqual(manifest["raster_sha256"], sanborn_batch.sha256(final_output))

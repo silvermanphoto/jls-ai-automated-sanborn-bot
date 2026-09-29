@@ -644,6 +644,9 @@ class SanbornQgisPlanTests(unittest.TestCase):
         self.facts_patch.start()
         self.paper_patch = mock.patch.object(sanborn_paper, "measure_paper", return_value=(178, 178, 178))
         self.paper_patch.start()
+        self.strength_patch = mock.patch.object(sanborn_paper, "measure_strength", return_value=1.0)
+        self.strength_patch.start()
+        self.addCleanup(self.strength_patch.stop)
 
     def tearDown(self):
         self.paper_patch.stop()

@@ -37,14 +37,25 @@ from xml.sax.saxutils import escape, quoteattr
 import numpy as np
 
 
-# --- The look. Levels 46 / 1.56 / 205, then near-grey bright paper to white. ---
-LEVELS_BLACK = 46.0  # input value that becomes pure black (levels black point)
-LEVELS_RANGE = 159  # input span from black to white, so the white point is 205
-LEVELS_EXPONENT = 0.641  # midtone 1.56, applied as the power 1 / 1.56
+# --- The look (v1.26, Joel 2026-09-29: "dense pinks and yellows, crisp deep black text"), fitted to Joel's example of
+# sheet 151: per-channel levels (black point, white point, gamma), dark ink pulled to neutral black, then near-grey
+# bright paper to white. The v1.24 look (levels 46 / 1.56 / 205 on every channel) washed the pinks out.
+LOOK_BLACK = (28.4, 0.0, 0.0)  # red, green, blue input values that become 0
+LOOK_WHITE = (182.8, 163.8, 183.3)  # input values that become 255
+LOOK_GAMMA = (0.793, 1.358, 1.144)  # output = 255 * ((in - black) / (white - black)) ** gamma
+INK_FULL = 60.0  # a pixel whose brightest balanced channel is at or below this is ink: darkened to 20% (near black)
+INK_NONE = 105.0  # at or above this nothing is darkened; the ink weight fades linearly between the two
+INK_KEEP = 0.2  # share of the look's value that full ink keeps
 PAPER_SPREAD_LIMIT = 30  # channel spread (brightest minus dimmest) where paper weight reaches 0
 PAPER_SPREAD_FADE = 12  # fade width: a spread of 18 or less counts fully as paper
 PAPER_BRIGHT_START = 140  # brightest channel at or below which a pixel is never paper
 PAPER_BRIGHT_FADE = 25  # fade width: a brightest channel of 165 or more counts fully as paper
+
+# Per-sheet colour strength (v1.26): pale printings are deepened to sheet 151's density. Strength scales every
+# channel's distance below paper white; it is measured from the sheet's pink (green channel) and yellow (blue channel).
+STRENGTH_PINK_GREEN = 178.0 - 116.4  # sheet 151's pink: green channel distance below balanced paper
+STRENGTH_YELLOW_BLUE = 178.0 - 85.9  # sheet 151's yellow: blue channel distance below balanced paper
+STRENGTH_LIMITS = (0.85, 1.5)
 
 # Per-sheet paper balance (Joel, 2026-09-29: 'whiteness levels of all tiles match'). Each recipe carries its sheet's
 # measured paper colour; the pixel function scales every channel so that colour becomes PAPER_REFERENCE first.
@@ -67,18 +78,25 @@ QGIS_ENVIRONMENT = {
 
 
 def clean(in_ar, out_ar, xoff, yoff, xsize, ysize, raster_xsize, raster_ysize, buf_radius, gt, band, **kw):
-    """GDAL pixel function: levels every channel, then lift near-grey bright paper to white."""
+    """GDAL pixel function: balance paper, deepen colour to the reference strength, apply the look, paper to white."""
+    def arg(name):
+        v = kw.get(name)
+        return v.decode("ascii") if isinstance(v, bytes) else v  # GDAL hands arguments over as bytes
     src = [a.astype(np.float32) for a in in_ar[:3]]
-    paper_rgb = kw.get("paper")
+    paper_rgb = arg("paper")
     if paper_rgb:
-        if isinstance(paper_rgb, bytes):  # GDAL hands pixel-function arguments over as bytes
-            paper_rgb = paper_rgb.decode("ascii")
         ref = [float(v) for v in str(paper_rgb).split(",")]
         src = [np.clip(c * (PAPER_REFERENCE / max(ref[i], 1.0)), 0, 255) for i, c in enumerate(src)]
+    strength = float(arg("strength") or 1.0)
+    if strength != 1.0:
+        src = [np.clip(PAPER_REFERENCE - strength * (PAPER_REFERENCE - c), 0, 255) for c in src]
     r, g, b = src
     mx = np.maximum(np.maximum(r, g), b); mn = np.minimum(np.minimum(r, g), b)
     paper = np.clip((PAPER_SPREAD_LIMIT - (mx - mn)) / PAPER_SPREAD_FADE, 0, 1) * np.clip((mx - PAPER_BRIGHT_START) / PAPER_BRIGHT_FADE, 0, 1)
-    lev = (np.clip((src[int(band) - 1] - LEVELS_BLACK) / LEVELS_RANGE, 0, 1) ** LEVELS_EXPONENT) * 255
+    i = int(band) - 1
+    lev = 255 * np.clip((src[i] - LOOK_BLACK[i]) / (LOOK_WHITE[i] - LOOK_BLACK[i]), 0, 1) ** LOOK_GAMMA[i]
+    ink = np.clip((INK_NONE - mx) / (INK_NONE - INK_FULL), 0, 1)
+    lev = lev * (1 - (1 - INK_KEEP) * ink)
     out_ar[:] = lev + (255 - lev) * paper
 
 
@@ -157,8 +175,9 @@ def _srs_text(wkt: str) -> str:
     return wkt.strip()
 
 
-def measure_paper(tif: Path | str, width: int | None = None, height: int | None = None) -> tuple[int, int, int]:
-    """Median red, green and blue of the sheet's bright near-grey paper, from a small read by gdal_translate."""
+def _sample(tif: Path | str, width: int | None, height: int | None) -> np.ndarray:
+    """A 1/16-size red, green, blue, alpha read of the sheet, via gdal_translate. The map position is dropped
+    (-a_ullr) because the ENVI format refuses sheared geotransforms, such as the 1958-topo fits of 486, 493 and 494."""
     program, env = _gdalinfo()
     translate = str(Path(program).with_name("gdal_translate"))
     with tempfile.TemporaryDirectory() as tmp:
@@ -167,19 +186,42 @@ def measure_paper(tif: Path | str, width: int | None = None, height: int | None 
             facts = read_raster_facts(tif); width, height = facts["width"], facts["height"]
         sw = str(min(width, max(8, width // PAPER_SAMPLE_DIVISOR))); sh = str(min(height, max(8, height // PAPER_SAMPLE_DIVISOR)))
         try:
-            subprocess.run([translate, "-q", "-of", "ENVI", "-outsize", sw, sh, "-r", "nearest", str(tif), str(raw)],
+            subprocess.run([translate, "-q", "-of", "ENVI", "-outsize", sw, sh, "-r", "nearest", "-a_ullr", "0", "1", "1", "0", str(tif), str(raw)],
                            check=True, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             header = (Path(tmp) / "sample.hdr").read_text()
         except (OSError, subprocess.CalledProcessError) as exc:
             raise RecipeError(f"GDAL cannot sample {tif}: {exc}") from exc
         w = int(re.search(r"samples\s*=\s*(\d+)", header).group(1)); h = int(re.search(r"lines\s*=\s*(\d+)", header).group(1))
-        data = np.fromfile(raw, dtype=np.uint8).reshape(-1, h, w)
+        return np.fromfile(raw, dtype=np.uint8).reshape(-1, h, w)
+
+
+def measure_paper(tif: Path | str, width: int | None = None, height: int | None = None) -> tuple[int, int, int]:
+    """Median red, green and blue of the sheet's bright near-grey paper, from a small read by gdal_translate."""
+    data = _sample(tif, width, height)
     r, g, b, a = (data[i].astype(np.int16) for i in range(4))
     mx = np.maximum(np.maximum(r, g), b); mn = np.minimum(np.minimum(r, g), b)
     paper = (a > 0) & (mx - mn < 35) & (mx > 120) & (mx < 250)
     if paper.sum() < 200:
         return (int(PAPER_REFERENCE),) * 3
     return tuple(int(np.median(c[paper])) for c in (r, g, b))
+
+
+def measure_strength(tif: Path | str, paper_rgb, width: int | None = None, height: int | None = None) -> float:
+    """How much to deepen this sheet's colour so its pinks and yellows match sheet 151 (1.0 = unchanged)."""
+    data = _sample(tif, width, height)
+    a = data[3] > 0
+    r, g, b = (data[i].astype(np.float32)[a] * (PAPER_REFERENCE / max(float(paper_rgb[i]), 1.0)) for i in range(3))
+    pink = (r - g > 25) & (b - g > 3) & (r > b + 8) & (r > 110) & (r < 200)
+    yellow = (r > 120) & (g > 105) & (r - b > 45) & (g - b > 35) & (r - g < 40)
+    votes = []
+    if pink.sum() >= 50:
+        votes.append((int(pink.sum()), STRENGTH_PINK_GREEN / max(PAPER_REFERENCE - float(np.median(g[pink])), 1.0)))
+    if yellow.sum() >= 50:
+        votes.append((int(yellow.sum()), STRENGTH_YELLOW_BLUE / max(PAPER_REFERENCE - float(np.median(b[yellow])), 1.0)))
+    if not votes:
+        return 1.0
+    s = float(np.exp(sum(n * np.log(v) for n, v in votes) / sum(n for n, _ in votes)))
+    return round(min(max(s, STRENGTH_LIMITS[0]), STRENGTH_LIMITS[1]), 3)
 
 
 def render_vrt_xml(tif: Path | str) -> str:
@@ -200,7 +242,9 @@ def render_vrt_xml(tif: Path | str) -> str:
     srs = escape(_srs_text(facts["wkt"]))
     mapping = ",".join(str(value) for value in facts["axis_mapping"])
     geotransform = ", ".join(repr(value) for value in facts["geotransform"])
-    paper_arg = ",".join(str(v) for v in measure_paper(tif, facts["width"], facts["height"]))
+    paper_rgb = measure_paper(tif, facts["width"], facts["height"])
+    paper_arg = ",".join(str(v) for v in paper_rgb)
+    strength_arg = measure_strength(tif, paper_rgb, facts["width"], facts["height"])
 
     def simple_source(source_band: int) -> str:
         return (
@@ -221,7 +265,7 @@ def render_vrt_xml(tif: Path | str) -> str:
         lines.extend(simple_source(source_band) for source_band in (1, 2, 3))
         lines.append("    <PixelFunctionLanguage>Python</PixelFunctionLanguage>\n")
         lines.append(f"    <PixelFunctionType>{PIXEL_FUNCTION}</PixelFunctionType>\n")
-        lines.append(f'    <PixelFunctionArguments band="{band}" paper="{paper_arg}"/>\n')
+        lines.append(f'    <PixelFunctionArguments band="{band}" paper="{paper_arg}" strength="{strength_arg}"/>\n')
         lines.append("  </VRTRasterBand>\n")
     lines.append('  <VRTRasterBand dataType="Byte" band="4">\n')
     lines.append("    <ColorInterp>Alpha</ColorInterp>\n")
