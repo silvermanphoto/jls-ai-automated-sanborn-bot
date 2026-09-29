@@ -31,6 +31,15 @@ Use the master instruction manual in this folder as the operating source of trut
 
 ## Lessons learned
 
+### 2026-09-29 — Version 1.25, per-sheet paper balance
+
+- `render_vrt_xml` measures each sheet's paper colour (`measure_paper`: median red, green, blue of bright near-grey pixels
+  with alpha, from a gdal_translate read at 1/16 size, never below 8 px) and writes it into every colour band's
+  `PixelFunctionArguments` as `paper="r,g,b"`. `clean` scales each channel by 178 / paper before the levels and
+  paper lift, so every sheet's paper ends equally white (Joel: "whiteness levels of all tiles match").
+- GDAL passes pixel-function arguments as bytes; `clean` decodes them. Tests that stand in fake TIFFs must stub
+  `measure_paper` as well as `read_raster_facts`.
+
 ### 2026-09-29 — Version 1.24, paper whitening through recipe files
 
 - Every finished sheet gets `<name>.clean.vrt` beside its TIFF (`tools/sanborn_paper.py`):

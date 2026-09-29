@@ -642,8 +642,11 @@ class SanbornQgisPlanTests(unittest.TestCase):
             sanborn_paper, "read_raster_facts", return_value=FAKE_SHEET_FACTS
         )
         self.facts_patch.start()
+        self.paper_patch = mock.patch.object(sanborn_paper, "measure_paper", return_value=(178, 178, 178))
+        self.paper_patch.start()
 
     def tearDown(self):
+        self.paper_patch.stop()
         self.facts_patch.stop()
         self.approval_patch.stop()
 

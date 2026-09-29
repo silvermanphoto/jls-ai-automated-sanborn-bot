@@ -46,6 +46,11 @@ PAPER_SPREAD_FADE = 12  # fade width: a spread of 18 or less counts fully as pap
 PAPER_BRIGHT_START = 140  # brightest channel at or below which a pixel is never paper
 PAPER_BRIGHT_FADE = 25  # fade width: a brightest channel of 165 or more counts fully as paper
 
+# Per-sheet paper balance (Joel, 2026-09-29: 'whiteness levels of all tiles match'). Each recipe carries its sheet's
+# measured paper colour; the pixel function scales every channel so that colour becomes PAPER_REFERENCE first.
+PAPER_REFERENCE = 178.0  # typical bright paper in the scans
+PAPER_SAMPLE_DIVISOR = 16  # measure paper on a 1/16-size read of the sheet
+
 MODULE_NAME = "sanborn_paper"
 PIXEL_FUNCTION = MODULE_NAME + ".clean"
 VRT_SUFFIX = ".clean.vrt"
@@ -63,10 +68,17 @@ QGIS_ENVIRONMENT = {
 
 def clean(in_ar, out_ar, xoff, yoff, xsize, ysize, raster_xsize, raster_ysize, buf_radius, gt, band, **kw):
     """GDAL pixel function: levels every channel, then lift near-grey bright paper to white."""
-    r, g, b = (a.astype(np.float32) for a in in_ar[:3])
+    src = [a.astype(np.float32) for a in in_ar[:3]]
+    paper_rgb = kw.get("paper")
+    if paper_rgb:
+        if isinstance(paper_rgb, bytes):  # GDAL hands pixel-function arguments over as bytes
+            paper_rgb = paper_rgb.decode("ascii")
+        ref = [float(v) for v in str(paper_rgb).split(",")]
+        src = [np.clip(c * (PAPER_REFERENCE / max(ref[i], 1.0)), 0, 255) for i, c in enumerate(src)]
+    r, g, b = src
     mx = np.maximum(np.maximum(r, g), b); mn = np.minimum(np.minimum(r, g), b)
     paper = np.clip((PAPER_SPREAD_LIMIT - (mx - mn)) / PAPER_SPREAD_FADE, 0, 1) * np.clip((mx - PAPER_BRIGHT_START) / PAPER_BRIGHT_FADE, 0, 1)
-    lev = (np.clip((in_ar[int(band) - 1] - LEVELS_BLACK) / LEVELS_RANGE, 0, 1) ** LEVELS_EXPONENT) * 255
+    lev = (np.clip((src[int(band) - 1] - LEVELS_BLACK) / LEVELS_RANGE, 0, 1) ** LEVELS_EXPONENT) * 255
     out_ar[:] = lev + (255 - lev) * paper
 
 
@@ -145,6 +157,31 @@ def _srs_text(wkt: str) -> str:
     return wkt.strip()
 
 
+def measure_paper(tif: Path | str, width: int | None = None, height: int | None = None) -> tuple[int, int, int]:
+    """Median red, green and blue of the sheet's bright near-grey paper, from a small read by gdal_translate."""
+    program, env = _gdalinfo()
+    translate = str(Path(program).with_name("gdal_translate"))
+    with tempfile.TemporaryDirectory() as tmp:
+        raw = Path(tmp) / "sample"
+        if width is None or height is None:
+            facts = read_raster_facts(tif); width, height = facts["width"], facts["height"]
+        sw = str(min(width, max(8, width // PAPER_SAMPLE_DIVISOR))); sh = str(min(height, max(8, height // PAPER_SAMPLE_DIVISOR)))
+        try:
+            subprocess.run([translate, "-q", "-of", "ENVI", "-outsize", sw, sh, "-r", "nearest", str(tif), str(raw)],
+                           check=True, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            header = (Path(tmp) / "sample.hdr").read_text()
+        except (OSError, subprocess.CalledProcessError) as exc:
+            raise RecipeError(f"GDAL cannot sample {tif}: {exc}") from exc
+        w = int(re.search(r"samples\s*=\s*(\d+)", header).group(1)); h = int(re.search(r"lines\s*=\s*(\d+)", header).group(1))
+        data = np.fromfile(raw, dtype=np.uint8).reshape(-1, h, w)
+    r, g, b, a = (data[i].astype(np.int16) for i in range(4))
+    mx = np.maximum(np.maximum(r, g), b); mn = np.minimum(np.minimum(r, g), b)
+    paper = (a > 0) & (mx - mn < 35) & (mx > 120) & (mx < 250)
+    if paper.sum() < 200:
+        return (int(PAPER_REFERENCE),) * 3
+    return tuple(int(np.median(c[paper])) for c in (r, g, b))
+
+
 def render_vrt_xml(tif: Path | str) -> str:
     """The exact recipe text for one sheet TIFF. Same TIFF, same text."""
     tif = Path(tif)
@@ -163,6 +200,7 @@ def render_vrt_xml(tif: Path | str) -> str:
     srs = escape(_srs_text(facts["wkt"]))
     mapping = ",".join(str(value) for value in facts["axis_mapping"])
     geotransform = ", ".join(repr(value) for value in facts["geotransform"])
+    paper_arg = ",".join(str(v) for v in measure_paper(tif, facts["width"], facts["height"]))
 
     def simple_source(source_band: int) -> str:
         return (
@@ -183,7 +221,7 @@ def render_vrt_xml(tif: Path | str) -> str:
         lines.extend(simple_source(source_band) for source_band in (1, 2, 3))
         lines.append("    <PixelFunctionLanguage>Python</PixelFunctionLanguage>\n")
         lines.append(f"    <PixelFunctionType>{PIXEL_FUNCTION}</PixelFunctionType>\n")
-        lines.append(f'    <PixelFunctionArguments band="{band}"/>\n')
+        lines.append(f'    <PixelFunctionArguments band="{band}" paper="{paper_arg}"/>\n')
         lines.append("  </VRTRasterBand>\n")
     lines.append('  <VRTRasterBand dataType="Byte" band="4">\n')
     lines.append("    <ColorInterp>Alpha</ColorInterp>\n")

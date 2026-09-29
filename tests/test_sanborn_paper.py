@@ -75,6 +75,26 @@ class PixelFunctionTests(unittest.TestCase):
                 self.assertEqual(run_clean(rgb), levels_only(rgb))
                 self.assertNotEqual(len(set(run_clean(rgb))), 1)
 
+    def test_yellowed_sheet_paper_is_balanced_to_white(self):
+        # Joel 2026-09-29: every sheet's paper ends equally white. A yellow-cast sheet's own paper colour
+        # (179, 171, 158) is scaled to the reference before the whitening, so its paper turns pure white.
+        out = []
+        for band in (1, 2, 3):
+            arr = np.zeros((1, 1), dtype=np.uint8)
+            sanborn_paper.clean([np.full((1, 1), v, np.uint8) for v in (179, 171, 158)], arr, 0, 0, 1, 1, 1, 1, 0, None,
+                                band=str(band), paper=b"179,171,158")
+            out.append(int(arr[0, 0]))
+        self.assertEqual(tuple(out), (255, 255, 255))
+
+    def test_without_a_paper_reading_the_formula_is_unchanged(self):
+        rng = np.random.default_rng(29)
+        inputs = [rng.integers(0, 256, size=(16, 16), dtype=np.uint8) for _ in range(3)]
+        for band in (1, 2, 3):
+            a = np.zeros((16, 16), dtype=np.uint8); b = np.zeros((16, 16), dtype=np.uint8)
+            sanborn_paper.clean(inputs, a, 0, 0, 16, 16, 16, 16, 0, None, band=str(band))
+            proven_clean(inputs, b, band)
+            np.testing.assert_array_equal(a, b)
+
     def test_named_constants_reproduce_the_proven_formula_exactly(self):
         rng = np.random.default_rng(1911)
         inputs = [rng.integers(0, 256, size=(64, 64), dtype=np.uint8) for _ in range(3)]
@@ -107,8 +127,11 @@ class RecipeFileTests(unittest.TestCase):
         self.facts = dict(SHEET_FACTS)
         self.patch = mock.patch.object(sanborn_paper, "read_raster_facts", side_effect=lambda tif: self.facts)
         self.patch.start()
+        self.paper_patch = mock.patch.object(sanborn_paper, "measure_paper", return_value=(178, 178, 178))
+        self.paper_patch.start()
 
     def tearDown(self):
+        self.paper_patch.stop()
         self.patch.stop()
         self.temp.cleanup()
 
