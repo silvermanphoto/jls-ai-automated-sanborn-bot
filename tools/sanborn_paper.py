@@ -78,7 +78,9 @@ STRENGTH_SPREAD = (10.0, 30.0)  # strength applies fully only to coloured pixels
 # near-grey bright pixels per cell, gaps filled from neighbours, smoothed); every pixel is balanced against the paper
 # around it. The map is indexed by position on the sheet, so it works at every zoom level.
 BACKGROUND_COLUMNS = 32  # cells across the sheet; rows follow the sheet's shape
-BACKGROUND_FLOOR = 0.7  # local paper is never taken as darker than this share of the sheet's overall paper
+BACKGROUND_FLOOR = 0.8  # local paper is never taken as darker than this share of the sheet's overall paper
+BACKGROUND_MIN_SHARE = 0.3  # a cell counts only when paper covers this share of it (dense blocks borrow from neighbours)
+BACKGROUND_MAX_TINT = 8.0  # paper candidates must be this neutral after balancing to the sheet's paper (pale pink wash is not)
 
 # Per-sheet paper balance (Joel, 2026-09-29: 'whiteness levels of all tiles match'). Each recipe carries its sheet's
 # measured paper colour; the pixel function scales every channel so that colour becomes PAPER_REFERENCE first.
@@ -325,15 +327,18 @@ def measure_background(tif: Path | str, paper_rgb, width: int | None = None, hei
     cols = BACKGROUND_COLUMNS; rows = max(2, int(round(cols * h / max(w, 1))))
     r, g, b, a = (data[i].astype(np.float32) for i in range(4))
     mx = np.maximum(np.maximum(r, g), b); mn = np.minimum(np.minimum(r, g), b)
-    paper = (a > 0) & (mx - mn < 35) & (mx > 100) & (mx < 252)
+    br, bg, bb = (c * (PAPER_REFERENCE / max(float(paper_rgb[i]), 1.0)) for i, c in enumerate((r, g, b)))
+    tint = np.hypot(br - bg, (br + bg) / 2 - bb)
+    paper = (a > 0) & (tint < BACKGROUND_MAX_TINT) & (mx > 100) & (mx < 252)
     if paper.sum() < 200:
         return None
     grid = np.full((rows, cols, 3), np.nan, np.float32)
     ys = np.minimum((np.arange(h) * rows) // h, rows - 1); xs = np.minimum((np.arange(w) * cols) // w, cols - 1)
     cell = ys[:, None] * cols + xs[None, :]
     for k in range(rows * cols):
-        m = paper & (cell == k)
-        if m.sum() >= 12:
+        inside = (cell == k) & (a > 0)
+        m = paper & inside
+        if m.sum() >= 12 and m.sum() >= BACKGROUND_MIN_SHARE * max(int(inside.sum()), 1):
             grid[k // cols, k % cols] = [np.median(ch[m]) for ch in (r, g, b)]
     floor = np.array(paper_rgb, np.float32) * BACKGROUND_FLOOR
     for _ in range(rows + cols):  # fill cells without paper from their neighbours
