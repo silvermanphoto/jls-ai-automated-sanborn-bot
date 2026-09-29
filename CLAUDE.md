@@ -2,7 +2,7 @@
 
 > Open findings from the 2026-09 code review: ~/.claude/overseer/reviews/2026-09/jls-ai-automated-sanborn-bot.md and ~/.claude/overseer/reviews/2026-09/sanborn-comparison.md. Mention them to Joel at the start of each session; delete this line once none are open.
 
-Use the local-first version 1.23 workflow. Read `AGENTS.md` for standing safety rules, `LOCAL BATCH ENGINE.md` for commands, and `AI AUTOMATED SANBORN BOT - MASTER INSTRUCTIONS.md` for the full evidence policy. Keep explanations in plain English.
+Use the local-first version 1.24 workflow. Read `AGENTS.md` for standing safety rules, `LOCAL BATCH ENGINE.md` for commands, and `AI AUTOMATED SANBORN BOT - MASTER INSTRUCTIONS.md` for the full evidence policy. Keep explanations in plain English.
 
 ## Sheet fitting — hard rule
 
@@ -55,9 +55,9 @@ Reviewer and note are mandatory. `--replace-existing` deliberately supersedes an
 - Every completed raster uses opacity 1.0, Brightness 0, Gamma 1.0, Contrast 0 (no channel stretch), and alpha band 4. Generated QGIS code must perform duplicate preflight and rollback and must contain no project-save call.
 - Earlier live Tile 236 evidence used an equivalent hash-bound plan, not a live schema-3 manifest. The present schema-3 revision was exercised in the installed QGIS 3.42.1 runtime with the real index and synthetic tiles; the unavailable QGIS MCP connection prevented a current run against Joel's open protected project. Keep those claims separate.
 
-Version 1.20 passes all 183 engine tests with the working QGIS GDAL family, including real warping and embedded-provenance resume checks. When using QGIS GDAL, set PROJ_LIB and PROJ_DATA to its Contents/Resources/proj folder and GDAL_DATA to Contents/Resources/gdal.
+Version 1.24 passes all 228 engine tests under the python.org Python 3.12 (`/usr/local/bin/python3.12 -m unittest discover -s tests`) with QGIS's GDAL appended to PATH, including real warping, embedded-provenance resume checks and a real read of a paper recipe through QGIS's GDAL. When using QGIS GDAL, set PROJ_LIB and PROJ_DATA to its Contents/Resources/proj folder and GDAL_DATA to Contents/Resources/gdal.
 
-2026-09-25 appearance correction: preserve the original TIFF appearance. Brightness and contrast stay at 0, gamma at 1, opacity at 100%, alpha band 4, and RGB channel stretching is disabled. This supersedes every earlier enhanced-display preset; it does not alter the source pixels.
+2026-09-29 paper whitening (1.24): Joel approved whitening the sheet paper. QGIS shows each sheet through `<name>.clean.vrt`, a read-only recipe file beside its TIFF whose colours the trusted `sanborn_paper` module computes at draw time: levels 46 / 1.56 / 205, near-grey bright paper lifted to white, pink, yellow, tan and blue fills kept. TIFFs are never rewritten. The layer style stays Brightness 0, Gamma 1, Contrast 0, no channel stretch, opacity 1 and alpha band 4. QGIS needs two environment settings, `GDAL_VRT_ENABLE_PYTHON=TRUSTED_MODULES` and `GDAL_VRT_PYTHON_TRUSTED_MODULES=sanborn_paper`; the importer stops before any change when they are missing. Tune the look only in `tools/sanborn_paper.py`, then run `python3 tools/sanborn_paper.py install-module` and `python3 tools/sanborn_paper.py backfill "1911 SANBORN DOWNLOADS"`. This supersedes the 2026-09-25 rule that preserved the original TIFF appearance.
 
 2026-09-25 review integrity (1.18): Completed rasters validate against their frozen evidence, preserving their original renderer and software provenance. New approvals and warps still require current inputs and software. Archive validation may preserve withdrawn results but must never authorize their import. Sheets 486, 487, 493 and 494 require a fresh original-1958-topo packet with at least three independent checks before approval, finishing or import. Reopening retires active queue links while retaining historical evidence; failed archives restore originals and remove partial copies only after verified recovery.
 

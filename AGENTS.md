@@ -31,6 +31,24 @@ Use the master instruction manual in this folder as the operating source of trut
 
 ## Lessons learned
 
+### 2026-09-29 — Version 1.24, paper whitening through recipe files
+
+- Every finished sheet gets `<name>.clean.vrt` beside its TIFF (`tools/sanborn_paper.py`):
+  RGB bands are GDAL Python pixel functions `sanborn_paper.clean`, band 4 passes the
+  TIFF's alpha through, the TIFF is named relative to the recipe, and no code sits
+  inside the recipe. `sanborn_batch.py finish` and the ladder scripts write it; every
+  importer loads it instead of the TIFF.
+- Recipes are written read-only. GDAL rewrites a writable VRT (full WKT, statistics,
+  source properties) whenever QGIS computes statistics, which breaks the exact-content
+  check; read-only, it logs `Failed to write .vrt file` and leaves the file intact.
+- The importer verifies the recipe against the hashed TIFF when it builds the plan,
+  rehashes both before any change, treats a layer on the TIFF or on its recipe as the
+  same sheet, switches a TIFF layer to its recipe in place (rollback switches it back),
+  and stops before any change when a pixel block cannot be read through the recipe.
+- One-time switch of already-loaded sheets:
+  `python3 tools/sanborn_qgis.py migrate-to-recipes` prints PyQGIS code; it never saves
+  and undoes every switch if one fails.
+
 ### 2026-09-28 — Version 1.23, rotate-scale-shift fit over every measured point
 
 - Joel's hard rule: sheets are fitted by rotation + uniform scale + shift, least
@@ -206,7 +224,7 @@ Remote: `origin` using HTTPS. After every commit, push to keep GitHub in sync.
 6. Keep production databases and working map records local in this public repository. This scoped privacy exception overrides the general database-backup rule. Never delete local data when untracking it. Separately reviewed, deliberately published datasets need their own authorization.
 7. Use clean commit authorship. Never add AI co-author or generation-credit trailers.
 
-2026-09-25 appearance correction: preserve the original TIFF appearance. Brightness and contrast stay at 0, gamma at 1, opacity at 100%, alpha band 4, and RGB channel stretching is disabled. This supersedes every earlier enhanced-display preset; it does not alter the source pixels.
+2026-09-29 paper whitening (1.24): Joel approved whitening the sheet paper. QGIS shows each sheet through `<name>.clean.vrt`, a read-only recipe file beside its TIFF whose colours the trusted `sanborn_paper` module computes at draw time: levels 46 / 1.56 / 205, near-grey bright paper lifted to white, pink, yellow, tan and blue fills kept. TIFFs are never rewritten. The layer style stays Brightness 0, Gamma 1, Contrast 0, no channel stretch, opacity 1 and alpha band 4. QGIS needs two environment settings, `GDAL_VRT_ENABLE_PYTHON=TRUSTED_MODULES` and `GDAL_VRT_PYTHON_TRUSTED_MODULES=sanborn_paper`; the importer stops before any change when they are missing. Tune the look only in `tools/sanborn_paper.py`, then run `python3 tools/sanborn_paper.py install-module` and `python3 tools/sanborn_paper.py backfill "1911 SANBORN DOWNLOADS"`. This supersedes the 2026-09-25 rule that preserved the original TIFF appearance.
 
 ## Public publication boundary — 2026-09-25
 

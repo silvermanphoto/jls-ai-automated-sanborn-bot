@@ -28,6 +28,7 @@ from urllib.request import Request, urlopen
 
 from PIL import Image
 
+import sanborn_paper
 from sanborn_review import require_approval, validate_control_labels
 from sanborn_qgis import load_manifest as validate_qgis_manifest
 from sanborn_placement_policy import require_current_placement_evidence
@@ -3053,6 +3054,12 @@ def cmd_finish(args: argparse.Namespace) -> int:
             final_record = _verify_final_pair(row, output, ledger, approved_review=review)
         if final_record["transformation"].get("distortion_override") is not False:
             fail("The final warp claims a distortion exception; a similarity fit has none.")
+        # QGIS shows the sheet through its paper recipe file (paper whitened at
+        # draw time); the finished TIFF itself is never rewritten.
+        try:
+            recipe = sanborn_paper.write_vrt(output)
+        except sanborn_paper.RecipeError as exc:
+            fail(f"Could not write the paper recipe file for {output.name}: {exc}")
         # Close the gap between the pre-warp approval check and final publish.
         # Any source, points, reference, artifact, or token change during a long
         # warp invalidates approval before a manifest or verified state exists.
@@ -3079,6 +3086,7 @@ def cmd_finish(args: argparse.Namespace) -> int:
                     "schema_version": 3,
                     "tile": args.tile,
                     "path": str(output),
+                    "vrt_path": str(recipe),
                     "raster_sha256": final_record["output"]["sha256"],
                     "ledger_path": str(ledger),
                     "ledger_sha256": sha256(ledger),

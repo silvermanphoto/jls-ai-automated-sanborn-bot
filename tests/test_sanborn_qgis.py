@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import hashlib
+import io
 import json
 from pathlib import Path
 import sys
@@ -12,6 +13,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 
+import sanborn_paper  # noqa: E402
 import sanborn_qgis  # noqa: E402
 from sanborn_review import REQUIRED_ARTIFACTS  # noqa: E402
 from sanborn_qgis import (  # noqa: E402
@@ -29,6 +31,17 @@ from sanborn_qgis import (  # noqa: E402
 )
 
 
+# What gdalinfo would report for a finished sheet; the test rasters are not real TIFFs.
+FAKE_SHEET_FACTS = {
+    "width": 100,
+    "height": 80,
+    "wkt": 'PROJCS["WGS 84 / Pseudo-Mercator",AUTHORITY["EPSG","3857"]]',
+    "axis_mapping": [1, 2],
+    "geotransform": [-9393000.0, 0.05, 0.0, 3996000.0, 0.0, -0.05],
+    "bands": [{"type": "Byte", "color": color} for color in ("Red", "Green", "Blue", "Alpha")],
+}
+
+
 def file_sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -42,6 +55,7 @@ def write_manifest(folder: Path, tile: int, **changes) -> Path:
     raster = folder / f"Sanborn 1911 -- Tile {tile}_georeferenced.tif"
     raster.write_bytes(f"test raster for tile {tile}".encode("utf-8"))
     raster_digest = file_sha256(raster)
+    sanborn_paper.write_vrt(raster)
     source = folder / f"source-{tile}.jp2"
     points = folder / f"points-{tile}.points"
     source.write_bytes(f"source-{tile}".encode("utf-8"))
@@ -372,6 +386,10 @@ def generated_helper_namespace():
     core.QgsRasterLayer = FakeRasterLayer
     core.QgsMultiBandColorRenderer = type("FakeMultiBandRenderer", (), {})
     core.QgsContrastEnhancement = type("FakeContrastEnhancement", (), {"NoEnhancement": 0})
+    core.QgsDataProvider = type(
+        "FakeDataProvider", (), {"ProviderOptions": type("ProviderOptions", (), {})}
+    )
+    core.QgsRectangle = type("FakeRectangle", (), {"__init__": lambda self, *args: None})
     qgis = types.ModuleType("qgis")
     qgis.core = core
     namespace = {"PLAN": {}}
@@ -379,6 +397,230 @@ def generated_helper_namespace():
     with mock.patch.dict(sys.modules, {"qgis": qgis, "qgis.core": core}):
         exec(definitions, namespace)
     return namespace
+
+
+
+class FakePoint:
+    def __init__(self, x, y):
+        self._x, self._y = x, y
+
+    def x(self):
+        return self._x
+
+    def y(self):
+        return self._y
+
+
+class FakeExtent:
+    def __init__(self, x0=-9393000.0, y0=3995996.0, x1=-9392995.0, y1=3996000.0):
+        self.box = (x0, y0, x1, y1)
+
+    def xMinimum(self):
+        return self.box[0]
+
+    def yMinimum(self):
+        return self.box[1]
+
+    def xMaximum(self):
+        return self.box[2]
+
+    def yMaximum(self):
+        return self.box[3]
+
+    def width(self):
+        return self.box[2] - self.box[0]
+
+    def height(self):
+        return self.box[3] - self.box[1]
+
+    def center(self):
+        return FakePoint((self.box[0] + self.box[2]) / 2, (self.box[1] + self.box[3]) / 2)
+
+
+class FakeBlock:
+    def __init__(self, valid):
+        self._valid = valid
+
+    def isValid(self):
+        return self._valid
+
+
+class FakeProvider:
+    def __init__(self, layer):
+        self.layer = layer
+
+    def colorInterpretation(self, band):
+        return 6 if band == 4 else band
+
+    def xSize(self):
+        return 100
+
+    def ySize(self):
+        return 80
+
+    def block(self, band, rectangle, width, height):
+        return FakeBlock(self.layer.source() not in LiveRaster.unreadable)
+
+
+class FakeRenderer:
+    def __init__(self, opacity=1.0, alpha=4):
+        self._opacity, self._alpha = opacity, alpha
+
+    def opacity(self):
+        return self._opacity
+
+    def alphaBand(self):
+        return self._alpha
+
+    def setAlphaBand(self, band):
+        self._alpha = band
+
+    def setOpacity(self, opacity):
+        self._opacity = opacity
+
+    def clone(self):
+        return FakeRenderer(self._opacity, self._alpha)
+
+
+class FakeBrightness:
+    def __init__(self):
+        self.values = [0, 1.0, 0]
+
+    def brightness(self):
+        return self.values[0]
+
+    def gamma(self):
+        return self.values[1]
+
+    def contrast(self):
+        return self.values[2]
+
+    def setBrightness(self, value):
+        self.values[0] = value
+
+    def setGamma(self, value):
+        self.values[1] = value
+
+    def setContrast(self, value):
+        self.values[2] = value
+
+
+class LiveRaster(FakeRasterLayer):
+    """A raster layer with enough of QgsRasterLayer for the live preflight and switch code."""
+
+    unreadable = set()
+    unswitchable = set()
+    counter = 0
+
+    def __init__(self, path, name, provider="gdal", layer_id=None):
+        LiveRaster.counter += 1
+        super().__init__(path, name, layer_id or f"live-{LiveRaster.counter}")
+        self._provider_type = provider
+        self._valid = True
+        self._renderer = FakeRenderer()
+        self._brightness = FakeBrightness()
+        self.data_source_calls = []
+        self.reloaded = False
+
+    def isValid(self):
+        return self._valid
+
+    def crs(self):
+        return types.SimpleNamespace(authid=lambda: "EPSG:3857")
+
+    def bandCount(self):
+        return 4
+
+    def dataProvider(self):
+        return FakeProvider(self)
+
+    def renderer(self):
+        return self._renderer
+
+    def setRenderer(self, renderer):
+        self._renderer = renderer
+
+    def brightnessFilter(self):
+        return self._brightness
+
+    def hueSaturationFilter(self):
+        return types.SimpleNamespace(invertColors=lambda: False)
+
+    def extent(self):
+        return FakeExtent()
+
+    def reload(self):
+        self.reloaded = True
+
+    def providerType(self):
+        return self._provider_type
+
+    def setName(self, name):
+        self._name = name
+
+    def triggerRepaint(self):
+        pass
+
+    def setDataSource(self, source, name, provider, options):
+        self.data_source_calls.append(source)
+        self._path, self._name, self._provider_type = source, name, provider
+        self._valid = source not in LiveRaster.unswitchable
+
+
+def live_helper_namespace():
+    helpers = generated_helper_namespace()
+    helpers["QgsRasterLayer"] = LiveRaster
+    helpers["PLAN"]["expected_raster_crs"] = EXPECTED_CRS
+    LiveRaster.unreadable = set()
+    LiveRaster.unswitchable = set()
+    return helpers
+
+
+def migration_namespace(plan, project):
+    core = types.ModuleType("qgis.core")
+    core.QgsDataProvider = type(
+        "FakeDataProvider", (), {"ProviderOptions": type("ProviderOptions", (), {})}
+    )
+    core.QgsProject = types.SimpleNamespace(instance=lambda: project)
+    core.QgsRasterLayer = LiveRaster
+    core.QgsRectangle = type("FakeRectangle", (), {"__init__": lambda self, *args: None})
+    qgis = types.ModuleType("qgis")
+    qgis.core = core
+    namespace = {"PLAN": plan}
+    definitions = sanborn_qgis._RECIPE_MIGRATION_BODY.split("SANBORN_RECIPE_SWITCH_RESULT =", 1)[0]
+    with mock.patch.dict(sys.modules, {"qgis": qgis, "qgis.core": core}):
+        exec(definitions, namespace)
+    LiveRaster.unreadable = set()
+    LiveRaster.unswitchable = set()
+    return namespace
+
+
+class MigrationRoot(FakeRoot):
+    def findGroups(self, recursive=False):
+        found = []
+
+        def visit(group):
+            for child in group.children():
+                if isinstance(child, FakeGroup) and not isinstance(child, FakeLayerNode):
+                    found.append(child)
+                    visit(child)
+
+        visit(self)
+        return found
+
+
+class FakeMigrationProject:
+    def __init__(self, filename, root):
+        self._filename, self._root = filename, root
+
+    def fileName(self):
+        return self._filename
+
+    def layerTreeRoot(self):
+        return self._root
+
+    def isDirty(self):
+        return True
 
 
 class SanbornQgisPlanTests(unittest.TestCase):
@@ -396,8 +638,13 @@ class SanbornQgisPlanTests(unittest.TestCase):
             sanborn_qgis, "require_approval", side_effect=read_approval
         )
         self.approval_patch.start()
+        self.facts_patch = mock.patch.object(
+            sanborn_paper, "read_raster_facts", return_value=FAKE_SHEET_FACTS
+        )
+        self.facts_patch.start()
 
     def tearDown(self):
+        self.facts_patch.stop()
         self.approval_patch.stop()
 
     def test_name_parser_ignores_1911_year(self):
@@ -431,6 +678,8 @@ class SanbornQgisPlanTests(unittest.TestCase):
             item = {
                 "path": str(shared),
                 "raster_sha256": digest,
+                "vrt_path": str(shared),
+                "vrt_sha256": digest,
                 "ledger_path": str(shared),
                 "ledger_sha256": "0" * 64,
                 "source_path": str(shared),
@@ -655,7 +904,10 @@ class SanbornQgisPlanTests(unittest.TestCase):
                 "node.name()",
                 "project.fileName()",
                 "project.crs().authid()",
-                "QgsRasterLayer(path, item[\"layer_name\"] + \" verification probe\", \"gdal\")",
+                "QgsRasterLayer(recipe, item[\"layer_name\"] + \" verification probe\", \"gdal\")",
+                "_sanborn_require_recipe_pixels(probe, recipe)",
+                "_sanborn_switch_to_recipe(layer, item[\"vrt_path\"])",
+                "GDAL_VRT_PYTHON_TRUSTED_MODULES set to sanborn_paper",
                 "Qgis.RasterColorInterpretation.AlphaBand",
                 "project.addMapLayer(layer, False)",
                 "brightness.setBrightness",
@@ -991,7 +1243,8 @@ class SanbornQgisPlanTests(unittest.TestCase):
     def test_preservation_does_not_weaken_incoming_path_or_registry_duplicate_guards(self):
         with tempfile.TemporaryDirectory() as temp:
             _, _, group, helpers = self._preserved_pair_fixture(Path(temp))
-            incoming = {495: {"path": "/tmp/Tile 495_current.tif"}}
+            incoming = {495: {"path": "/tmp/Tile 495_current.tif",
+                              "vrt_path": "/tmp/Tile 495_current.clean.vrt"}}
             other = FakeRasterLayer("/tmp/Tile 495_other.tif", "Tile 495", "other-495")
             project = types.SimpleNamespace(mapLayers=lambda: {other.id(): other})
             with self.assertRaisesRegex(RuntimeError, "points to a different raster"):
@@ -1083,6 +1336,205 @@ class SanbornQgisPlanTests(unittest.TestCase):
             payload = execute_code_payload(plan)
             self.assertEqual(set(payload), {"code"})
             self.assertEqual(payload["code"], generate_pyqgis_code(plan))
+
+    # --- paper recipe files (2026-09-29) ---
+
+    def test_plan_carries_raster_and_verified_recipe_paths(self):
+        with tempfile.TemporaryDirectory() as temp:
+            plan = build_plan([write_manifest(Path(temp), 154)])
+            item = plan["tiles"][0]
+            recipe = Path(item["path"]).with_name(Path(item["path"]).stem + ".clean.vrt")
+            self.assertEqual(item["vrt_path"], str(recipe.resolve()))
+            self.assertEqual(item["vrt_sha256"], file_sha256(recipe))
+            self.assertTrue(item["path"].endswith("_georeferenced.tif"))
+
+    def test_import_refuses_a_missing_edited_or_misnamed_recipe(self):
+        with tempfile.TemporaryDirectory() as temp:
+            manifest = write_manifest(Path(temp), 154)
+            record = json.loads(manifest.read_text(encoding="utf-8"))
+            recipe = sanborn_paper.vrt_path_for(record["path"])
+            recipe.unlink()
+            with self.assertRaisesRegex(ManifestError, "recipe file is missing.*backfill"):
+                build_plan([manifest])
+            sanborn_paper.write_vrt(record["path"])
+            recipe.chmod(0o644)
+            recipe.write_text(recipe.read_text(encoding="utf-8") + " ", encoding="utf-8")
+            with self.assertRaisesRegex(ManifestError, "does not match its sheet"):
+                build_plan([manifest])
+            sanborn_paper.write_vrt(record["path"])
+            record["vrt_path"] = str(Path(temp) / "elsewhere.clean.vrt")
+            manifest.write_text(json.dumps(record), encoding="utf-8")
+            with self.assertRaisesRegex(ManifestError, "vrt_path is not the raster's adjacent"):
+                build_plan([manifest])
+            # Archive validation of a withdrawn result never needs a recipe.
+            recipe.unlink()
+            self.assertEqual(sanborn_qgis.load_manifest(manifest, for_import=False)["vrt_path"], None)
+
+    def test_a_layer_on_the_recipe_counts_as_the_same_sheet_as_its_raster(self):
+        helpers = live_helper_namespace()
+        tif = "/tmp/Sanborn 1911 -- Tile 154_georeferenced.tif"
+        recipe = "/tmp/Sanborn 1911 -- Tile 154_georeferenced.clean.vrt"
+        incoming = {154: {"path": tif, "vrt_path": recipe}}
+        on_recipe = LiveRaster(recipe, "Sanborn 1911 - Tile 154", layer_id="on-recipe")
+        group = FakeGroup([FakeLayerNode(on_recipe)])
+        helpers["_sanborn_check_group_contents"](group, incoming)
+        project = types.SimpleNamespace(mapLayers=lambda: {on_recipe.id(): on_recipe})
+        helpers["_sanborn_preflight_project_tiles"](project, FakeRoot([group]), incoming)
+
+        on_raster = LiveRaster(tif, "Sanborn 1911 - Tile 154", layer_id="on-raster")
+        both = FakeGroup([FakeLayerNode(on_recipe), FakeLayerNode(on_raster)])
+        with self.assertRaisesRegex(RuntimeError, "more than once"):
+            helpers["_sanborn_check_group_contents"](both, incoming)
+        project = types.SimpleNamespace(mapLayers=lambda: {on_recipe.id(): on_recipe, on_raster.id(): on_raster})
+        with self.assertRaisesRegex(RuntimeError, "already registered more than once"):
+            helpers["_sanborn_preflight_raster"](project, dict(incoming[154], layer_name="Sanborn 1911 - Tile 154"))
+
+    def test_a_reused_raster_layer_is_switched_to_its_recipe_in_place(self):
+        helpers = live_helper_namespace()
+        tif = "/tmp/Sanborn 1911 -- Tile 154_georeferenced.tif"
+        recipe = "/tmp/Sanborn 1911 -- Tile 154_georeferenced.clean.vrt"
+        item = {"path": tif, "vrt_path": recipe, "layer_name": "Sanborn 1911 - Tile 154"}
+        existing = LiveRaster(tif, "Sanborn 1911 - Tile 154", layer_id="existing")
+        project = types.SimpleNamespace(mapLayers=lambda: {existing.id(): existing})
+        entry = helpers["_sanborn_preflight_raster"](project, item)
+        self.assertIs(entry["layer"], existing)
+        self.assertTrue(entry["already_registered"])
+        self.assertTrue(entry["switch_to_recipe"])
+        self.assertEqual(existing.data_source_calls, [])
+        helpers["_sanborn_switch_to_recipe"](existing, recipe)
+        self.assertEqual(helpers["_sanborn_layer_source"](existing), helpers["_sanborn_canonical"](recipe))
+        self.assertEqual((existing.id(), existing.name()), ("existing", "Sanborn 1911 - Tile 154"))
+        # A layer already on its recipe needs no switch; a new sheet uses the recipe probe.
+        self.assertFalse(helpers["_sanborn_preflight_raster"](project, item)["switch_to_recipe"])
+        fresh = helpers["_sanborn_preflight_raster"](types.SimpleNamespace(mapLayers=dict), item)
+        self.assertFalse(fresh["already_registered"])
+        self.assertEqual(fresh["layer"].source(), helpers["_sanborn_canonical"](recipe))
+
+    def test_missing_qgis_settings_stop_before_any_change_with_plain_instructions(self):
+        helpers = live_helper_namespace()
+        tif = "/tmp/Sanborn 1911 -- Tile 154_georeferenced.tif"
+        recipe = "/tmp/Sanborn 1911 -- Tile 154_georeferenced.clean.vrt"
+        existing = LiveRaster(tif, "Sanborn 1911 - Tile 154", layer_id="existing")
+        project = types.SimpleNamespace(mapLayers=lambda: {existing.id(): existing})
+        LiveRaster.unreadable = {helpers["_sanborn_canonical"](recipe)}
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "GDAL_VRT_ENABLE_PYTHON set to TRUSTED_MODULES and GDAL_VRT_PYTHON_TRUSTED_MODULES "
+            "set to sanborn_paper.*Nothing was changed",
+        ):
+            helpers["_sanborn_preflight_raster"](
+                project, {"path": tif, "vrt_path": recipe, "layer_name": "Sanborn 1911 - Tile 154"}
+            )
+        self.assertEqual(existing.data_source_calls, [])
+        self.assertFalse(existing.reloaded)
+
+    def test_rollback_points_a_switched_layer_back_at_its_raster(self):
+        helpers = live_helper_namespace()
+        tif = "/tmp/Sanborn 1911 -- Tile 154_georeferenced.tif"
+        recipe = "/tmp/Sanborn 1911 -- Tile 154_georeferenced.clean.vrt"
+        existing = LiveRaster(tif, "Sanborn 1911 - Tile 154", layer_id="existing")
+        project = types.SimpleNamespace(mapLayers=lambda: {existing.id(): existing})
+        prepared = {154: {"layer": existing, "already_registered": True}}
+        rollback = helpers["_sanborn_snapshot_rollback"](FakeRoot([]), None, prepared)
+        helpers["_sanborn_switch_to_recipe"](existing, recipe)
+        errors = helpers["_sanborn_restore_after_failure"](project, FakeRoot([]), rollback)
+        self.assertEqual(errors, [])
+        self.assertEqual(existing.source(), tif)
+        self.assertEqual(existing.providerType(), "gdal")
+
+    def _migration_fixture(self, folder):
+        sheets = {}
+        for tile in (154, 155, 157):
+            tif = folder / f"Sanborn 1911 -- Tile {tile}_georeferenced.tif"
+            tif.write_bytes(f"sheet {tile}".encode())
+            sheets[tile] = tif
+        for tile in (154, 157):
+            sanborn_paper.write_vrt(sheets[tile])
+        edited = sanborn_paper.vrt_path_for(sheets[157])
+        edited.chmod(0o644)
+        edited.write_text("edited", encoding="utf-8")
+        plan = sanborn_qgis.build_recipe_migration_plan([folder])
+        return sheets, plan
+
+    def test_migration_plan_lists_only_verified_recipes_and_never_saves(self):
+        with tempfile.TemporaryDirectory() as temp:
+            sheets, plan = self._migration_fixture(Path(temp))
+            self.assertEqual([Path(r["path"]).name for r in plan["recipes"]], [sheets[154].name])
+            self.assertEqual([Path(r["path"]).name for r in plan["unverified"]], [sheets[157].name])
+            self.assertIs(plan["save_project"], False)
+            code = sanborn_qgis.generate_recipe_migration_code(plan)
+            compile(code, "<recipe-migration>", "exec")
+            for forbidden in ("project.write(", "QgsProject.write", "saveProject("):
+                self.assertNotIn(forbidden, code)
+
+    def _migration_project(self, sheets, plan, extra=()):
+        layers = [LiveRaster(str(sheets[tile].resolve()), f"Sanborn 1911 - Tile {tile}", layer_id=f"t{tile}")
+                  for tile in (154, 155, 157)]
+        already = LiveRaster(str(sheets[154].with_name("Sanborn 1911 -- Tile 156_georeferenced.clean.vrt")),
+                             "Sanborn 1911 - Tile 156", layer_id="t156")
+        folder_node = FakeRoot([FakeLayerNode(layer) for layer in (*layers, already, *extra)], name="NORTHEAST ATL")
+        group = FakeRoot([folder_node], name=GROUP_NAME)
+        root = MigrationRoot([group])
+        project = FakeMigrationProject(plan["protected_project"], root)
+        return layers, project
+
+    def test_migration_switches_verified_sheets_and_reports_the_rest(self):
+        with tempfile.TemporaryDirectory() as temp:
+            sheets, plan = self._migration_fixture(Path(temp))
+            layers, project = self._migration_project(sheets, plan)
+            namespace = migration_namespace(plan, project)
+            with mock.patch("builtins.print"):
+                result = namespace["switch_sanborn_sheets_to_recipes"]()
+            self.assertEqual((result["switched"], result["skipped"], result["failed"]), (1, 3, 0))
+            self.assertEqual(result["switched_layers"], ["Sanborn 1911 - Tile 154"])
+            reasons = " | ".join(entry["reason"] for entry in result["skipped_layers"])
+            self.assertIn("no paper recipe file", reasons)
+            self.assertIn("does not verify", reasons)
+            self.assertIn("already draws through its paper recipe file", reasons)
+            self.assertTrue(layers[0].source().endswith("Tile 154_georeferenced.clean.vrt"))
+            self.assertEqual(layers[0].name(), "Sanborn 1911 - Tile 154")
+            self.assertEqual(layers[1].data_source_calls, [])
+            self.assertFalse(result["save_project"])
+
+    def test_migration_rolls_back_every_switch_when_one_fails(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            sheets, _ = self._migration_fixture(folder)
+            sheets[158] = folder / "Sanborn 1911 -- Tile 158_georeferenced.tif"
+            sheets[158].write_bytes(b"sheet 158")
+            sanborn_paper.write_vrt(sheets[158])
+            plan = sanborn_qgis.build_recipe_migration_plan([folder])
+            extra = LiveRaster(str(sheets[158].resolve()), "Sanborn 1911 - Tile 158", layer_id="t158")
+            layers, project = self._migration_project(sheets, plan, extra=(extra,))
+            namespace = migration_namespace(plan, project)
+            LiveRaster.unswitchable = {str(sanborn_paper.vrt_path_for(sheets[158].resolve()))}
+            with mock.patch("builtins.print"), self.assertRaisesRegex(RuntimeError, "could not switch"):
+                namespace["switch_sanborn_sheets_to_recipes"]()
+            self.assertEqual(layers[0].source(), str(sheets[154].resolve()))
+            self.assertEqual(extra.source(), str(sheets[158].resolve()))
+
+    def test_migration_stops_before_any_switch_when_qgis_settings_are_missing(self):
+        with tempfile.TemporaryDirectory() as temp:
+            sheets, plan = self._migration_fixture(Path(temp))
+            layers, project = self._migration_project(sheets, plan)
+            namespace = migration_namespace(plan, project)
+            LiveRaster.unreadable = {str(sanborn_paper.vrt_path_for(sheets[154]).resolve())}
+            with self.assertRaisesRegex(RuntimeError, "GDAL_VRT_PYTHON_TRUSTED_MODULES"):
+                namespace["switch_sanborn_sheets_to_recipes"]()
+            self.assertEqual(layers[0].data_source_calls, [])
+
+    def test_migration_cli_prints_code_without_archiving_in_tests(self):
+        with tempfile.TemporaryDirectory() as temp:
+            self._migration_fixture(Path(temp))
+            out, err = io.StringIO(), io.StringIO()
+            with mock.patch("sys.stdout", out), mock.patch("sys.stderr", err), mock.patch.object(
+                sanborn_qgis.sanborn_archive, "archive_project"
+            ) as archive:
+                code = sanborn_qgis.main(["migrate-to-recipes", "--folder", temp, "--skip-archive"])
+            self.assertEqual(code, 0)
+            archive.assert_not_called()
+            self.assertIn("SANBORN_RECIPE_SWITCH_RESULT = switch_sanborn_sheets_to_recipes()", out.getvalue())
+            self.assertIn("1 sheets have a verified paper recipe file; 1 recipe files do not verify", err.getvalue())
 
 
 if __name__ == "__main__":

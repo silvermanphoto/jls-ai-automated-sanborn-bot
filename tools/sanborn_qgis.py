@@ -6,6 +6,10 @@ This helper never imports PyQGIS itself.  It validates one or more local
 plain PyQGIS code or the JSON payload accepted by QGIS MCP's ``execute_code``
 tool.  The emitted code performs every live check before changing the layer
 tree and deliberately contains no project-save call.
+
+Each sheet is shown through its paper recipe file ``<name>.clean.vrt`` (see
+``sanborn_paper.py``), never the TIFF directly. ``migrate-to-recipes`` prints
+code for the one-time switch of sheets already loaded from their TIFFs.
 """
 
 from __future__ import annotations
@@ -21,6 +25,7 @@ from typing import Any, Iterable
 
 import sanborn_archive
 import sanborn_collections
+import sanborn_paper
 from sanborn_layer_names import intersection_for_proposal
 from sanborn_review import REQUIRED_ARTIFACTS, require_approval
 from sanborn_placement_policy import require_current_placement_evidence
@@ -547,6 +552,30 @@ def load_manifest(path: Path, *, for_import: bool = True) -> dict[str, Any]:
         actual_raster_digest = sha256(raster)
         if actual_raster_digest != raster_digest:
             _fail(f"{manifest}: finished raster SHA-256 does not match raster_sha256")
+        vrt_path: Path | None = None
+        vrt_digest: str | None = None
+        if for_import:
+            # QGIS shows the sheet through its paper recipe file. The recipe must
+            # be exactly the one this hashed TIFF produces; the live code then
+            # rehashes both files before it changes anything.
+            try:
+                vrt_path = sanborn_paper.vrt_path_for(raster)
+            except sanborn_paper.RecipeError as exc:
+                _fail(f"{manifest}: {exc}")
+            recorded_vrt = record.get("vrt_path")
+            if recorded_vrt is not None and Path(str(recorded_vrt)).expanduser().resolve() != vrt_path.resolve():
+                _fail(f"{manifest}: vrt_path is not the raster's adjacent paper recipe file")
+            try:
+                sanborn_paper.verify_vrt(vrt_path, raster)
+            except sanborn_paper.RecipeError as exc:
+                _fail(
+                    f"{manifest}: {exc}. Write it with: python3 tools/sanborn_paper.py "
+                    f"backfill {str(raster.parent)!r}"
+                )
+            vrt_path = vrt_path.resolve()
+            vrt_digest = sha256(vrt_path)
+            if sha256(raster) != raster_digest:
+                _fail(f"{manifest}: finished raster changed while its paper recipe was checked")
         actual_ledger_digest = sha256(ledger)
         if actual_ledger_digest != ledger_digest:
             _fail(f"{manifest}: georeference ledger SHA-256 does not match ledger_sha256")
@@ -596,6 +625,8 @@ def load_manifest(path: Path, *, for_import: bool = True) -> dict[str, Any]:
         "tile": tile,
         "sort_key": tile,
         "path": str(raster),
+        "vrt_path": str(vrt_path) if vrt_path is not None else None,
+        "vrt_sha256": vrt_digest,
         "layer_name": layer_name_for_tile(tile),
         "manifest": str(manifest),
         "raster_sha256": raster_digest,
@@ -682,6 +713,8 @@ def build_plan(manifests: Iterable[Path], *, preserve_existing_variants: Path | 
     preserved = [load_preserved_variant_pair(preserve_existing_variants)] if preserve_existing_variants else []
     if any(item["tile"] == pair["tile"] for item in tiles for pair in preserved):
         _fail("Cannot import a tile whose existing full/alpha pair is being preserved")
+    if any(not item.get("vrt_path") or not item.get("vrt_sha256") for item in tiles):
+        _fail("Every imported sheet needs its verified paper recipe file")
     return {
         "preserved_existing_variants": preserved,
         "schema_version": 1,
@@ -699,11 +732,13 @@ def build_plan(manifests: Iterable[Path], *, preserve_existing_variants: Path | 
         "style": dict(STYLE),
         "tiles": tiles,
         "actions": [
-            "Rehash every raster and georeference ledger before any QGIS mutation.",
+            "Rehash every raster, paper recipe file and georeference ledger before any QGIS mutation.",
             "Verify the exact protected project path and project CRS before mutation.",
             "Verify every raster is valid EPSG:3857 RGBA with band 4 as alpha.",
             "Create or safely reposition the exact Sanborn group immediately below the index.",
-            "Reuse each raster by canonical path or add it exactly once.",
+            "Reuse each sheet by canonical path (its raster or its paper recipe file) or add it exactly once.",
+            "Prove QGIS can draw each paper recipe file (its two GDAL settings are present) before any mutation.",
+            "Show every sheet through its paper recipe file; switch a reused layer from its raster in place.",
             "Apply the fixed rendering formula and alpha band.",
             "Place each sheet in its area subfolder, creating a missing one in its fixed position.",
             "Sort the sheets inside each subfolder by printed tile number.",
@@ -729,6 +764,8 @@ from qgis.core import (
     QgsRasterLayer,
     QgsMultiBandColorRenderer,
     QgsContrastEnhancement,
+    QgsDataProvider,
+    QgsRectangle,
 )
 
 _SANBORN_HASH_CACHE = {}
@@ -782,6 +819,7 @@ def _sanborn_sha256(path):
 def _sanborn_verify_file_hashes(item):
     checks = [
         ("raster", item["path"], item["raster_sha256"]),
+        ("paper recipe file", item["vrt_path"], item["vrt_sha256"]),
         ("georeference ledger", item["ledger_path"], item["ledger_sha256"]),
         ("source scan", item["source_path"], item["source_sha256"]),
         ("control file", item["points_path"], item["points_sha256"]),
@@ -809,6 +847,51 @@ def _sanborn_verify_file_hashes(item):
 
 def _sanborn_layer_source(layer):
     return _sanborn_canonical(layer.source().split("|", 1)[0])
+
+
+_SANBORN_RECIPE_SUFFIX = ".clean.vrt"
+_SANBORN_RECIPE_SETTINGS_MESSAGE = (
+    "QGIS cannot draw the whitened paper for {}. QGIS needs two settings under "
+    "Settings > Options > System > Environment: GDAL_VRT_ENABLE_PYTHON set to "
+    "TRUSTED_MODULES and GDAL_VRT_PYTHON_TRUSTED_MODULES set to sanborn_paper, and "
+    "the paper module installed with: python3 tools/sanborn_paper.py install-module. "
+    "Restart QGIS after setting them. Nothing was changed."
+)
+
+
+def _sanborn_source_identity(source):
+    """The sheet a source shows: a paper recipe file counts as the TIFF beside it."""
+    if source.endswith(_SANBORN_RECIPE_SUFFIX):
+        return source[: -len(_SANBORN_RECIPE_SUFFIX)] + ".tif"
+    return source
+
+
+def _sanborn_layer_identity(layer):
+    return _sanborn_source_identity(_sanborn_layer_source(layer))
+
+
+def _sanborn_require_recipe_pixels(layer, recipe):
+    """Read a small block through the recipe; it fails when the GDAL settings are missing."""
+    extent = layer.extent()
+    center = extent.center()
+    half_width = extent.width() / 64.0
+    half_height = extent.height() / 64.0
+    sample = QgsRectangle(
+        center.x() - half_width,
+        center.y() - half_height,
+        center.x() + half_width,
+        center.y() + half_height,
+    )
+    block = layer.dataProvider().block(1, sample, 8, 8)
+    if block is None or not block.isValid():
+        _sanborn_fail(_SANBORN_RECIPE_SETTINGS_MESSAGE.format(recipe))
+
+
+def _sanborn_switch_to_recipe(layer, recipe):
+    """Point an existing layer at its paper recipe file, keeping its id, node, name and style."""
+    layer.setDataSource(recipe, layer.name(), "gdal", QgsDataProvider.ProviderOptions())
+    if not layer.isValid() or _sanborn_layer_source(layer) != _sanborn_canonical(recipe):
+        _sanborn_fail("QGIS could not switch {} to its paper recipe file".format(layer.name()))
 
 
 def _sanborn_tile_number(name):
@@ -993,7 +1076,7 @@ def _sanborn_check_group_contents(group, incoming):
                     displayed_tile, expected_folder, folder_name
                 )
             )
-        seen.setdefault(displayed_tile, []).append(_sanborn_layer_source(layer))
+        seen.setdefault(displayed_tile, []).append(_sanborn_layer_identity(layer))
     for tile, paths in seen.items():
         if len(paths) > 1 and (
             tile in incoming or len(paths) != 2 or len(set(paths)) != 2
@@ -1020,7 +1103,7 @@ def _sanborn_preflight_project_tiles(project, root, incoming):
     }
 
     def check_raster(layer, origin, extra_name=None):
-        source = _sanborn_layer_source(layer)
+        source = _sanborn_layer_identity(layer)
         parsed = {
             _sanborn_tile_number(layer.name()),
             _sanborn_source_filename_tile(layer),
@@ -1067,48 +1150,58 @@ def _sanborn_preflight_project_tiles(project, root, incoming):
                  if _sanborn_tile_number(node.name()) == tile
                  or (isinstance(node.layer(), QgsRasterLayer)
                      and tile in {_sanborn_tile_number(node.layer().name()), _sanborn_source_filename_tile(node.layer())})]
-        if (len(registered) != 2 or {_sanborn_layer_source(layer) for layer in registered} != paths
+        if (len(registered) != 2 or {_sanborn_layer_identity(layer) for layer in registered} != paths
                 or len(nodes) != 2
                 or any(not isinstance(node.layer(), QgsRasterLayer) for node in nodes)
-                or {_sanborn_layer_source(node.layer()) for node in nodes} != paths):
+                or {_sanborn_layer_identity(node.layer()) for node in nodes} != paths):
             _sanborn_fail("preserved tile {} must have exactly one full and one alpha layer in the project".format(tile))
+
+
+def _sanborn_check_sheet_layer(layer, label):
+    if not layer.isValid():
+        _sanborn_fail("QGIS cannot open " + label)
+    if layer.crs().authid().upper() != PLAN["expected_raster_crs"]:
+        _sanborn_fail(
+            "{} uses {}, expected {}".format(
+                label, layer.crs().authid(), PLAN["expected_raster_crs"]
+            )
+        )
+    if layer.bandCount() != 4:
+        _sanborn_fail("sheet must contain exactly Red, Green, Blue, and Alpha bands: " + label)
+    provider = layer.dataProvider()
+    if provider.colorInterpretation(4) != Qgis.RasterColorInterpretation.AlphaBand:
+        _sanborn_fail("band 4 is not identified as a true alpha band: " + label)
+    renderer = layer.renderer()
+    if renderer is None or not hasattr(renderer, "setAlphaBand"):
+        _sanborn_fail("renderer cannot use the required alpha band: " + label)
 
 
 def _sanborn_preflight_raster(project, item):
     path = _sanborn_canonical(item["path"])
+    recipe = _sanborn_canonical(item["vrt_path"])
+    if _sanborn_source_identity(recipe) != path:
+        _sanborn_fail("paper recipe file does not sit beside its raster: " + recipe)
+    # A sheet already in the project may point at its raster (before the
+    # paper-whitening switch) or at its recipe; either is the same sheet.
     existing = [
         layer
         for layer in project.mapLayers().values()
-        if isinstance(layer, QgsRasterLayer) and _sanborn_layer_source(layer) == path
+        if isinstance(layer, QgsRasterLayer) and _sanborn_layer_identity(layer) == path
     ]
     if len(existing) > 1:
-        _sanborn_fail("raster is already registered more than once: " + path)
-    probe = QgsRasterLayer(path, item["layer_name"] + " verification probe", "gdal")
+        _sanborn_fail("sheet is already registered more than once (raster or paper recipe): " + path)
+    probe = QgsRasterLayer(recipe, item["layer_name"] + " verification probe", "gdal")
     if not probe.isValid():
-        _sanborn_fail("QGIS cannot freshly open raster: " + path)
+        _sanborn_fail("QGIS cannot freshly open the paper recipe file: " + recipe)
+    _sanborn_check_sheet_layer(probe, "paper recipe file " + recipe)
+    _sanborn_require_recipe_pixels(probe, recipe)
     layer = existing[0] if existing else probe
     if existing:
         # A corrected tile deliberately reuses its fixed disk filename.  Force
         # QGIS to discard the former provider cache, then compare it with a
         # separately opened provider before reusing the registered layer.
         layer.reload()
-    if not layer.isValid():
-        _sanborn_fail("QGIS cannot open raster: " + path)
-    if layer.crs().authid().upper() != PLAN["expected_raster_crs"]:
-        _sanborn_fail(
-            "raster {} uses {}, expected {}".format(
-                path, layer.crs().authid(), PLAN["expected_raster_crs"]
-            )
-        )
-    if layer.bandCount() != 4:
-        _sanborn_fail("raster must contain exactly Red, Green, Blue, and Alpha bands: " + path)
-    provider = layer.dataProvider()
-    if provider.colorInterpretation(4) != Qgis.RasterColorInterpretation.AlphaBand:
-        _sanborn_fail("raster band 4 is not identified as a true alpha band: " + path)
-    renderer = layer.renderer()
-    if renderer is None or not hasattr(renderer, "setAlphaBand"):
-        _sanborn_fail("raster renderer cannot use the required alpha band: " + path)
-    if existing:
+        _sanborn_check_sheet_layer(layer, "registered sheet " + _sanborn_layer_source(layer))
         live_extent = layer.extent()
         probe_extent = probe.extent()
         live_provider = layer.dataProvider()
@@ -1138,6 +1231,7 @@ def _sanborn_preflight_raster(project, item):
         "layer": layer,
         "already_registered": bool(existing),
         "provider_reloaded": bool(existing),
+        "switch_to_recipe": bool(existing) and _sanborn_layer_source(layer) != recipe,
     }
 
 
@@ -1223,6 +1317,8 @@ def _sanborn_snapshot_rollback(root, existing_group, prepared):
         reused[layer.id()] = {
             "layer": layer,
             "name": layer.name(),
+            "source": layer.source(),
+            "provider": layer.providerType(),
             "brightness": brightness.brightness(),
             "gamma": brightness.gamma(),
             "contrast": brightness.contrast(),
@@ -1309,6 +1405,12 @@ def _sanborn_restore_after_failure(project, root, rollback):
     for layer_id, snapshot in rollback.get("reused", {}).items():
         try:
             layer = snapshot["layer"]
+            if layer.source() != snapshot["source"]:
+                # Undo a switch to the paper recipe before restoring the style.
+                layer.setDataSource(
+                    snapshot["source"], snapshot["name"], snapshot["provider"],
+                    QgsDataProvider.ProviderOptions(),
+                )
             layer.setName(snapshot["name"])
             brightness = layer.brightnessFilter()
             brightness.setBrightness(snapshot["brightness"])
@@ -1483,12 +1585,16 @@ def prepare_sanborn_layers():
         )
         imported = []
         reused = []
+        switched = []
         for item in PLAN["tiles"]:
             tile = int(item["tile"])
             entry = prepared[tile]
             layer = entry["layer"]
             if entry["already_registered"]:
                 reused.append(tile)
+                if entry["switch_to_recipe"]:
+                    _sanborn_switch_to_recipe(layer, item["vrt_path"])
+                    switched.append(tile)
             else:
                 if project.addMapLayer(layer, False) is None:
                     _sanborn_fail("QGIS refused to register tile {}".format(tile))
@@ -1524,11 +1630,13 @@ def prepare_sanborn_layers():
             matches = [
                 layer
                 for layer in project.mapLayers().values()
-                if isinstance(layer, QgsRasterLayer) and _sanborn_layer_source(layer) == path
+                if isinstance(layer, QgsRasterLayer) and _sanborn_layer_identity(layer) == path
             ]
             if len(matches) != 1:
                 _sanborn_fail("tile path is not registered exactly once: " + path)
             layer = matches[0]
+            if _sanborn_layer_source(layer) != _sanborn_canonical(item["vrt_path"]):
+                _sanborn_fail("tile does not draw through its paper recipe file: " + path)
             nodes = [node for node in root.findLayers() if node.layerId() == layer.id()]
             expected_folder = _sanborn_subfolder_name(int(item["tile"]))
             parent = nodes[0].parent() if len(nodes) == 1 else None
@@ -1565,6 +1673,7 @@ def prepare_sanborn_layers():
             "folder_order": dict(folder_order),
             "imported_tiles": imported,
             "reused_tiles": reused,
+            "switched_to_recipe_tiles": switched,
             "child_nodes_collapsed": True,
             "save_project": False,
         }
@@ -1597,6 +1706,305 @@ def generate_pyqgis_code(plan: dict[str, Any]) -> str:
 def execute_code_payload(plan: dict[str, Any]) -> dict[str, str]:
     """Return the exact argument object expected by QGIS MCP execute_code."""
     return {"code": generate_pyqgis_code(plan)}
+
+
+# --- One-time switch of already-loaded sheets to their paper recipe files ---
+
+DEFAULT_SHEET_FOLDER = Path(__file__).resolve().parent.parent / "1911 SANBORN DOWNLOADS"
+
+
+def build_recipe_migration_plan(folders: Iterable[Path]) -> dict[str, Any]:
+    """List every sheet TIFF whose paper recipe file verifies, for the one-time switch.
+
+    The TIFF's size and modification time are recorded so the live code can
+    refuse a sheet rebuilt after this plan was made; the recipe is bound by hash.
+    """
+    recipes: list[dict[str, Any]] = []
+    unverified: list[dict[str, str]] = []
+    for folder in folders:
+        for tif in sorted(Path(folder).expanduser().resolve().glob("*_georeferenced.tif")):
+            vrt = sanborn_paper.vrt_path_for(tif)
+            if not vrt.is_file():
+                continue
+            before = tif.stat()
+            try:
+                sanborn_paper.verify_vrt(vrt, tif)
+                digest = sha256(vrt)
+            except (sanborn_paper.RecipeError, OSError, ManifestError) as exc:
+                unverified.append({"path": str(tif), "reason": str(exc)})
+                continue
+            after = tif.stat()
+            if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+                unverified.append({"path": str(tif), "reason": "the sheet changed while its recipe was checked"})
+                continue
+            recipes.append({
+                "path": str(tif),
+                "vrt_path": str(vrt),
+                "vrt_sha256": digest,
+                "raster_bytes": after.st_size,
+                "raster_mtime_ns": after.st_mtime_ns,
+            })
+    return {
+        "schema_version": 1,
+        "mode": "qgis-paper-recipe-migration",
+        "protected_project": str(PROTECTED_PROJECT),
+        "group": GROUP_NAME,
+        "recipes": recipes,
+        "unverified": unverified,
+        "save_project": False,
+    }
+
+
+_RECIPE_MIGRATION_BODY = r'''
+import hashlib
+import json
+import math
+import os
+
+from qgis.core import QgsDataProvider, QgsProject, QgsRasterLayer, QgsRectangle
+
+_RECIPE_SUFFIX = ".clean.vrt"
+
+
+def _recipe_fail(message):
+    raise RuntimeError("Sanborn paper recipe switch stopped: " + message)
+
+
+def _recipe_canonical(path):
+    return os.path.normcase(os.path.realpath(os.path.abspath(os.path.expanduser(path))))
+
+
+def _recipe_sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _recipe_source(layer):
+    return _recipe_canonical(layer.source().split("|", 1)[0])
+
+
+def _recipe_style(layer):
+    renderer = layer.renderer()
+    brightness = layer.brightnessFilter()
+    hue = layer.hueSaturationFilter()
+    return (
+        layer.name(),
+        type(renderer).__name__ if renderer is not None else None,
+        renderer.opacity() if renderer is not None else None,
+        renderer.alphaBand() if renderer is not None and hasattr(renderer, "alphaBand") else None,
+        brightness.brightness(),
+        round(brightness.gamma(), 9),
+        brightness.contrast(),
+        hue.invertColors() if hue is not None else None,
+    )
+
+
+def _recipe_require_pixels(layer, recipe):
+    extent = layer.extent()
+    center = extent.center()
+    half_width = extent.width() / 64.0
+    half_height = extent.height() / 64.0
+    sample = QgsRectangle(center.x() - half_width, center.y() - half_height,
+                          center.x() + half_width, center.y() + half_height)
+    block = layer.dataProvider().block(1, sample, 8, 8)
+    if block is None or not block.isValid():
+        _recipe_fail(
+            "QGIS cannot draw the whitened paper for {}. QGIS needs two settings under "
+            "Settings > Options > System > Environment: GDAL_VRT_ENABLE_PYTHON set to "
+            "TRUSTED_MODULES and GDAL_VRT_PYTHON_TRUSTED_MODULES set to sanborn_paper, and "
+            "the paper module installed with: python3 tools/sanborn_paper.py install-module. "
+            "Restart QGIS after setting them. Nothing was changed.".format(recipe)
+        )
+
+
+def _recipe_rollback(snapshots):
+    errors = []
+    for snapshot in reversed(snapshots):
+        layer = snapshot["layer"]
+        try:
+            if layer.source() != snapshot["source"]:
+                layer.setDataSource(snapshot["source"], snapshot["name"], snapshot["provider"],
+                                    QgsDataProvider.ProviderOptions())
+            layer.setName(snapshot["name"])
+            layer.setRenderer(snapshot["renderer"].clone())
+            brightness = layer.brightnessFilter()
+            brightness.setBrightness(snapshot["brightness"])
+            brightness.setGamma(snapshot["gamma"])
+            brightness.setContrast(snapshot["contrast"])
+            layer.triggerRepaint()
+        except Exception as exc:
+            errors.append("could not restore {}: {}".format(snapshot["name"], exc))
+    return errors
+
+
+def switch_sanborn_sheets_to_recipes():
+    if PLAN.get("save_project") is not False:
+        _recipe_fail("plan must explicitly prohibit project saving")
+    project = QgsProject.instance()
+    if _recipe_canonical(project.fileName()) != _recipe_canonical(PLAN["protected_project"]):
+        _recipe_fail("open project is {!r}, expected {!r}".format(project.fileName(), PLAN["protected_project"]))
+    root = project.layerTreeRoot()
+    groups = [group for group in root.findGroups(True) if group.name() == PLAN["group"]]
+    if len(groups) != 1:
+        _recipe_fail("expected exactly one group named {!r}; found {}".format(PLAN["group"], len(groups)))
+    group = groups[0]
+    recipes = {_recipe_canonical(record["path"]): record for record in PLAN["recipes"]}
+    unverified = {_recipe_canonical(record["path"]): record["reason"] for record in PLAN["unverified"]}
+
+    candidates = []
+    skipped = []
+    seen = set()
+    for node in group.findLayers():
+        layer = node.layer()
+        if layer is None:
+            skipped.append({"layer": node.name(), "reason": "the layer is missing from the project"})
+            continue
+        if layer.id() in seen:
+            continue
+        seen.add(layer.id())
+        if not isinstance(layer, QgsRasterLayer):
+            skipped.append({"layer": node.name(), "reason": "not a raster layer"})
+            continue
+        source = _recipe_source(layer)
+        if source.endswith(_RECIPE_SUFFIX):
+            skipped.append({"layer": node.name(), "reason": "already draws through its paper recipe file"})
+            continue
+        if layer.providerType() != "gdal" or not source.endswith("_georeferenced.tif"):
+            skipped.append({"layer": node.name(), "reason": "its source is not a *_georeferenced.tif sheet"})
+            continue
+        if source in unverified:
+            skipped.append({"layer": node.name(), "reason": "its paper recipe file does not verify: " + unverified[source]})
+            continue
+        record = recipes.get(source)
+        if record is None:
+            skipped.append({"layer": node.name(), "reason": "no paper recipe file beside its sheet (run backfill, then regenerate this code)"})
+            continue
+        stat = os.stat(source)
+        if (stat.st_size, stat.st_mtime_ns) != (record["raster_bytes"], record["raster_mtime_ns"]):
+            skipped.append({"layer": node.name(), "reason": "the sheet changed after this code was generated; regenerate it"})
+            continue
+        recipe = _recipe_canonical(record["vrt_path"])
+        if not os.path.isfile(recipe) or _recipe_sha256(recipe) != record["vrt_sha256"]:
+            skipped.append({"layer": node.name(), "reason": "the paper recipe file changed after this code was generated; regenerate it"})
+            continue
+        candidates.append((node, layer, recipe))
+
+    # Every candidate opens, matches its layer and draws before anything changes.
+    for node, layer, recipe in candidates:
+        probe = QgsRasterLayer(recipe, node.name() + " recipe probe", "gdal")
+        if not probe.isValid():
+            _recipe_fail("QGIS cannot open the paper recipe file: " + recipe)
+        if probe.bandCount() != 4 or probe.crs().authid() != layer.crs().authid():
+            _recipe_fail("the paper recipe file does not match its layer's bands or CRS: " + recipe)
+        live, fresh = layer.extent(), probe.extent()
+        if any(not math.isclose(a, b, rel_tol=0.0, abs_tol=1e-6) for a, b in (
+                (live.xMinimum(), fresh.xMinimum()), (live.yMinimum(), fresh.yMinimum()),
+                (live.xMaximum(), fresh.xMaximum()), (live.yMaximum(), fresh.yMaximum()))):
+            _recipe_fail("the paper recipe file covers a different area than its layer: " + recipe)
+        _recipe_require_pixels(probe, recipe)
+
+    snapshots = []
+    switched = []
+    try:
+        for node, layer, recipe in candidates:
+            parent = node.parent()
+            position = parent.children().index(node)
+            style = _recipe_style(layer)
+            brightness = layer.brightnessFilter()
+            snapshots.append({
+                "layer": layer,
+                "source": layer.source(),
+                "provider": layer.providerType(),
+                "name": layer.name(),
+                "renderer": layer.renderer().clone(),
+                "brightness": brightness.brightness(),
+                "gamma": brightness.gamma(),
+                "contrast": brightness.contrast(),
+            })
+            layer.setDataSource(recipe, layer.name(), "gdal", QgsDataProvider.ProviderOptions())
+            if not layer.isValid() or _recipe_source(layer) != recipe:
+                _recipe_fail("QGIS could not switch {} to its paper recipe file".format(node.name()))
+            if _recipe_style(layer) != style:
+                _recipe_fail("switching {} changed its name or style".format(node.name()))
+            if node.parent() is not parent or parent.children().index(node) != position:
+                _recipe_fail("switching {} moved it in the layer panel".format(node.name()))
+            layer.triggerRepaint()
+            switched.append(node.name())
+    except Exception as exc:
+        errors = _recipe_rollback(snapshots)
+        failed = {"switched": 0, "rolled_back": len(snapshots), "failed": 1, "error": str(exc),
+                  "rollback_errors": errors, "save_project": False}
+        print(json.dumps(failed, indent=2, sort_keys=True))
+        raise
+
+    result = {
+        "status": "success",
+        "switched": len(switched),
+        "switched_layers": switched,
+        "skipped": len(skipped),
+        "skipped_layers": skipped,
+        "failed": 0,
+        "project_dirty_unsaved": project.isDirty(),
+        "save_project": False,
+    }
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return result
+
+
+SANBORN_RECIPE_SWITCH_RESULT = switch_sanborn_sheets_to_recipes()
+'''
+
+
+def generate_recipe_migration_code(plan: dict[str, Any]) -> str:
+    """Self-contained PyQGIS code for the one-time switch; it never saves the project."""
+    serialized = json.dumps(plan, sort_keys=True, separators=(",", ":"))
+    return (
+        "# Generated by tools/sanborn_qgis.py migrate-to-recipes; deliberately never saves the project.\n"
+        "import json\n"
+        f"PLAN = json.loads({serialized!r})\n"
+        + _RECIPE_MIGRATION_BODY
+    )
+
+
+def migration_main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="sanborn_qgis.py migrate-to-recipes",
+        description=(
+            "Print PyQGIS code that switches every loaded sheet in the Sanborn group from its "
+            "*_georeferenced.tif to its verified paper recipe file, keeping name, place and style. "
+            "It never saves the project and undoes every switch if one fails."
+        ),
+    )
+    parser.add_argument("--folder", type=Path, action="append",
+                        help=f"folder of sheet TIFFs and recipe files (default: {DEFAULT_SHEET_FOLDER})")
+    parser.add_argument("--emit-payload", action="store_true",
+                        help="print the JSON argument object for QGIS MCP execute_code")
+    parser.add_argument("--skip-archive", action="store_true",
+                        help="do not copy the QGIS project into the dated archive first (tests only)")
+    args = parser.parse_args(argv)
+    plan = build_recipe_migration_plan(args.folder or [DEFAULT_SHEET_FOLDER])
+    print(
+        f"{len(plan['recipes'])} sheets have a verified paper recipe file; "
+        f"{len(plan['unverified'])} recipe files do not verify.",
+        file=sys.stderr,
+    )
+    if not args.skip_archive:
+        try:
+            target, replaced = sanborn_archive.archive_project(PROTECTED_PROJECT)
+        except sanborn_archive.ArchiveError as exc:
+            print(f"Stopped before changing anything: {exc}", file=sys.stderr)
+            return 3
+        verb = "Replaced today's" if replaced else "Saved a"
+        print(f"{verb} copy of your QGIS project at {target}", file=sys.stderr)
+    code = generate_recipe_migration_code(plan)
+    if args.emit_payload:
+        print(json.dumps({"code": code}, indent=2))
+    else:
+        print(code, end="")
+    return 0
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -1643,6 +2051,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv[:1] == ["migrate-to-recipes"]:
+        return migration_main(argv[1:])
     try:
         args = parse_args(argv)
         collection = sanborn_collections.get(args.collection)

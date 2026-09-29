@@ -36,6 +36,17 @@ def queue(db: sqlite3.Connection, tile: int, status: str = "queued", **fields) -
     db.commit()
 
 
+
+# What gdalinfo reports for a finished sheet; the fixture raster is not a real TIFF.
+SHEET_FACTS = {
+    "width": 100,
+    "height": 80,
+    "wkt": 'PROJCS["WGS 84 / Pseudo-Mercator",AUTHORITY["EPSG","3857"]]',
+    "axis_mapping": [1, 2],
+    "geotransform": [-9393000.0, 0.05, 0.0, 3996000.0, 0.0, -0.05],
+    "bands": [{"type": "Byte", "color": color} for color in ("Red", "Green", "Blue", "Alpha")],
+}
+
 class BatchSafetyTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -1103,6 +1114,8 @@ class BatchSafetyTests(unittest.TestCase):
             return_value=self._live_geotiff_info(final_record),
         ), mock.patch.object(
             sanborn_batch, "validate_qgis_manifest"
+        ), mock.patch.object(
+            sanborn_batch.sanborn_paper, "read_raster_facts", return_value=SHEET_FACTS
         ), mock.patch.object(sanborn_batch.subprocess, "run") as run:
             self.assertEqual(sanborn_batch.cmd_finish(args), 0)
 
@@ -1112,6 +1125,13 @@ class BatchSafetyTests(unittest.TestCase):
         self.assertEqual(manifest["schema_version"], 3)
         self.assertEqual(manifest["tile"], tile)
         self.assertEqual(manifest["path"], str(final_output))
+        # The paper recipe file is written beside the finished TIFF and recorded.
+        recipe = final_output.with_name(final_output.stem + ".clean.vrt")
+        self.assertEqual(manifest["vrt_path"], str(recipe))
+        with mock.patch.object(
+            sanborn_batch.sanborn_paper, "read_raster_facts", return_value=SHEET_FACTS
+        ):
+            sanborn_batch.sanborn_paper.verify_vrt(recipe, final_output)
         self.assertEqual(manifest["raster_sha256"], sanborn_batch.sha256(final_output))
         self.assertEqual(manifest["ledger_path"], str(final_ledger))
         self.assertEqual(manifest["ledger_sha256"], sanborn_batch.sha256(final_ledger))
