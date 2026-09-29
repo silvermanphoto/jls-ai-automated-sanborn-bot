@@ -55,13 +55,24 @@ def levels_only(rgb):
 
 
 def proven_clean(in_ar, out_ar, band):
-    """The v1.26 formula with literal numbers."""
+    """The v1.27 formula with literal numbers: look, paper lift, then flat fills."""
     r, g, b = (a.astype(np.float32) for a in in_ar[:3])
     mx = np.maximum(np.maximum(r, g), b); mn = np.minimum(np.minimum(r, g), b)
     paper = np.clip((30 - (mx - mn)) / 12, 0, 1) * np.clip((mx - 140) / 25, 0, 1)
+    looks = [look(c, k, mx) for k, c in enumerate((r, g, b))]
+    looks = [v + (255 - v) * paper for v in looks]
+    c1 = r - g; c2 = (r + g) / 2 - b
+    hue = np.degrees(np.arctan2(c2, c1)); light = (r + g + b) / 3
+    sat_w = np.clip((np.hypot(c1, c2) - 14) / 10, 0, 1)
     i = int(band) - 1
-    lev = look((r, g, b)[i], i, mx)
-    out_ar[:] = lev + (255 - lev) * paper
+    total = np.zeros_like(r); mixed = np.zeros_like(r)
+    for centre, half, target, fl in ((0, 27, (226, 156, 172), 134), (52, 14, (218, 161, 90), 114),
+                                     (82, 14, (237, 210, 77), 130), (230, 40, (137, 178, 199), 110)):
+        w = np.clip((half + 2.5 - np.abs((hue - centre + 180) % 360 - 180)) / 5, 0, 1)
+        a = np.clip((fl - 12 - light) / (fl - 12 - 60), 0, 1)
+        total += w; mixed += w * ((1 - a) * target[i] + a * looks[i])
+    fill = np.clip(total, 0, 1) * sat_w * (1 - paper)
+    out_ar[:] = fill * (mixed / np.maximum(total, 1e-6)) + (1 - fill) * looks[i]
 
 
 class PixelFunctionTests(unittest.TestCase):
@@ -74,11 +85,16 @@ class PixelFunctionTests(unittest.TestCase):
         self.assertTrue(all(v <= 45 for v in run_clean((74, 54, 49))))
         self.assertTrue(all(v <= 12 for v in run_clean((50, 45, 45))))
 
-    def test_pink_and_yellow_fills_keep_their_colour(self):
-        for rgb in ((162, 126, 132), (166, 141, 92)):
+    def test_fills_become_joels_target_colours(self):
+        # Joel 2026-09-29: pink #e29cac, orange #daa15a, yellow #edd24d, blue #89b2c7, whatever the scan's shade.
+        for rgb, target in (((152, 116, 132), (226, 156, 172)), ((140, 108, 124), (226, 156, 172)),
+                            ((143, 110, 80), (218, 161, 90)), ((158, 148, 85), (237, 210, 77)),
+                            ((150, 140, 70), (237, 210, 77)), ((90, 113, 129), (137, 178, 199))):
             with self.subTest(rgb=rgb):
-                self.assertEqual(run_clean(rgb), levels_only(rgb))
-                self.assertNotEqual(len(set(run_clean(rgb))), 1)
+                self.assertTrue(all(abs(o - t) <= 2 for o, t in zip(run_clean(rgb), target)), run_clean(rgb))
+
+    def test_ink_inside_a_fill_stays_dark(self):
+        self.assertTrue(all(v <= 60 for v in run_clean((70, 50, 55))))
 
     def test_yellowed_sheet_paper_is_balanced_to_white(self):
         # Joel 2026-09-29: every sheet's paper ends equally white. A yellow-cast sheet's own paper colour
@@ -91,8 +107,8 @@ class PixelFunctionTests(unittest.TestCase):
             out.append(int(arr[0, 0]))
         self.assertEqual(tuple(out), (255, 255, 255))
 
-    def test_strength_deepens_a_pale_pink(self):
-        # A pale printing's pink is deepened toward sheet 151's density; paper stays white.
+    def test_a_pale_pink_is_still_the_full_fill_colour(self):
+        # A pale printing's pink gets the same fill colour, with or without strength; paper stays white.
         def clean_with(rgb, **kw):
             out = []
             for band in (1, 2, 3):
@@ -101,9 +117,26 @@ class PixelFunctionTests(unittest.TestCase):
                                     band=str(band), **kw)
                 out.append(int(arr[0, 0]))
             return tuple(out)
-        plain, deep = clean_with((163, 127, 145)), clean_with((163, 127, 145), strength=b"1.3")
-        self.assertTrue(all(d < p for d, p in zip(deep, plain)))
+        pale = (160, 128, 144)
+        for kw in ({}, {"strength": b"1.5"}):
+            self.assertTrue(all(abs(o - t) <= 2 for o, t in zip(clean_with(pale, **kw), (226, 156, 172))))
         self.assertEqual(clean_with((178, 178, 178), strength=b"1.3"), (255, 255, 255))
+
+    def test_shadowed_paper_turns_white_against_the_local_paper_map(self):
+        # Joel 2026-09-29: no dingy white. Left half clean paper, right half a shadow 15% darker; the map knows both.
+        block = np.zeros((3, 8, 8), np.uint8)
+        block[:, :, :4] = np.array([190, 183, 172])[:, None, None]
+        block[:, :, 4:] = np.array([160, 154, 146])[:, None, None]
+        background = "2,2;190,183,172,160,154,146,190,183,172,160,154,146"
+        for band in (1, 2, 3):
+            out = np.zeros((8, 8), np.uint8)
+            sanborn_paper.clean(list(block), out, 0, 0, 8, 8, 8, 8, 0, None, band=str(band), paper=b"190,183,172",
+                                strength=b"1.5", background=background.encode())
+            self.assertTrue((out == 255).all(), out)
+        # Without the map the shadow stays dingy (the defect this fixes).
+        out = np.zeros((8, 8), np.uint8)
+        sanborn_paper.clean(list(block), out, 0, 0, 8, 8, 8, 8, 0, None, band="1", paper=b"190,183,172", strength=b"1.5")
+        self.assertLess(int(out[0, 7]), 250)
 
     def test_without_a_paper_reading_the_formula_is_unchanged(self):
         rng = np.random.default_rng(29)
@@ -151,6 +184,9 @@ class RecipeFileTests(unittest.TestCase):
         self.strength_patch = mock.patch.object(sanborn_paper, "measure_strength", return_value=1.0)
         self.strength_patch.start()
         self.addCleanup(self.strength_patch.stop)
+        self.background_patch = mock.patch.object(sanborn_paper, "measure_background", return_value=None)
+        self.background_patch.start()
+        self.addCleanup(self.background_patch.stop)
 
     def tearDown(self):
         self.paper_patch.stop()
@@ -324,7 +360,7 @@ class RealGdalRecipeTests(unittest.TestCase):
                                     check=True, capture_output=True, text=True, env=env)
             red, green, blue, alpha = ast.literal_eval(result.stdout.strip().splitlines()[-1])
             self.assertEqual((red[1][1], green[1][1], blue[1][1]), (255, 255, 255))
-            self.assertEqual((red[0][0], green[0][0], blue[0][0]), levels_only((162, 126, 132)))
+            self.assertEqual((red[0][0], green[0][0], blue[0][0]), (226, 156, 172))  # pink fill #e29cac
             self.assertEqual((alpha[3][3], alpha[1][1]), (0, 255))
             self.assertEqual(vrt.read_text(encoding="utf-8"), sanborn_paper.render_vrt_xml(tif))
 

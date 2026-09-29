@@ -51,11 +51,34 @@ PAPER_SPREAD_FADE = 12  # fade width: a spread of 18 or less counts fully as pap
 PAPER_BRIGHT_START = 140  # brightest channel at or below which a pixel is never paper
 PAPER_BRIGHT_FADE = 25  # fade width: a brightest channel of 165 or more counts fully as paper
 
+# Flat fills (v1.27, Joel 2026-09-29): every pink, orange, yellow and blue fill is one even colour on every sheet.
+# A fill pixel is recognised by its hue (angle of r-g, (r+g)/2-b after paper balance and strength) and saturation, and
+# replaced by Joel's target colour; ink mixed into it (darker than the fill) keeps its share of the look, so lines stay.
+FILLS = (  # hue centre (deg), half width (deg), target RGB, fill lightness (mean of balanced channels)
+    (0.0, 27.0, (226, 156, 172), 134.0),   # pink   #e29cac
+    (52.0, 14.0, (218, 161, 90), 114.0),   # orange #daa15a
+    (82.0, 14.0, (237, 210, 77), 130.0),   # yellow #edd24d
+    (230.0, 40.0, (137, 178, 199), 110.0),  # blue   #89b2c7
+)
+FILL_HUE_FADE = 5.0  # degrees over which a fill class fades at its hue edge
+FILL_SAT_LOW, FILL_SAT_HIGH = 14.0, 24.0  # saturation at which fill weight starts, and reaches full
+# Pixels counted as paper (the paper lift weight) are never fill, so stains and yellowed paper are not tinted.
+FILL_INK_GAP = 12.0  # a fill pixel up to this much darker than its fill lightness is pure fill
+FILL_INK_L = 60.0  # lightness of pure ink (balanced scan ink is about 50-60)
+
 # Per-sheet colour strength (v1.26): pale printings are deepened to sheet 151's density. Strength scales every
 # channel's distance below paper white; it is measured from the sheet's pink (green channel) and yellow (blue channel).
 STRENGTH_PINK_GREEN = 178.0 - 116.4  # sheet 151's pink: green channel distance below balanced paper
 STRENGTH_YELLOW_BLUE = 178.0 - 85.9  # sheet 151's yellow: blue channel distance below balanced paper
 STRENGTH_LIMITS = (0.85, 1.5)
+STRENGTH_SPREAD = (10.0, 30.0)  # strength applies fully only to coloured pixels (channel spread 30+), never to grey paper
+
+# Local paper (v1.28, Joel 2026-09-29: "still areas of dingy white"): shadows, stains and fold lines leave paper darker
+# than the sheet's overall paper. Each recipe carries a coarse map of the paper colour across the sheet (median of
+# near-grey bright pixels per cell, gaps filled from neighbours, smoothed); every pixel is balanced against the paper
+# around it. The map is indexed by position on the sheet, so it works at every zoom level.
+BACKGROUND_COLUMNS = 32  # cells across the sheet; rows follow the sheet's shape
+BACKGROUND_FLOOR = 0.7  # local paper is never taken as darker than this share of the sheet's overall paper
 
 # Per-sheet paper balance (Joel, 2026-09-29: 'whiteness levels of all tiles match'). Each recipe carries its sheet's
 # measured paper colour; the pixel function scales every channel so that colour becomes PAPER_REFERENCE first.
@@ -77,27 +100,87 @@ QGIS_ENVIRONMENT = {
 }
 
 
+_BACKGROUNDS: dict = {}
+
+
+def _parse_background(text):
+    """'rows,cols;r,g,b,r,g,b,...' -> float array rows x cols x 3 (cached: GDAL calls once per block)."""
+    grid = _BACKGROUNDS.get(text)
+    if grid is None:
+        head, values = text.split(";", 1)
+        rows, cols = (int(v) for v in head.split(","))
+        grid = np.array([float(v) for v in values.split(",")], np.float32).reshape(rows, cols, 3)
+        _BACKGROUNDS[text] = grid
+    return grid
+
+
+def _local_paper(text, xoff, yoff, xsize, ysize, shape):
+    """Paper colour around every pixel of the block, bilinear from the background map; None without a map.
+    GDAL passes the full-resolution window (xoff, yoff, xsize, ysize) even when it reads a reduced buffer."""
+    if not text or xsize is None or not xsize or not ysize:
+        return None
+    try:
+        raster = _local_paper.raster  # set by clean() from raster_xsize, raster_ysize
+    except AttributeError:
+        return None
+    grid = _parse_background(text)
+    rows, cols = grid.shape[:2]
+    h, w = shape
+    fx = (xoff + (np.arange(w, dtype=np.float32) + 0.5) * (xsize / w)) / raster[0] * cols - 0.5
+    fy = (yoff + (np.arange(h, dtype=np.float32) + 0.5) * (ysize / h)) / raster[1] * rows - 0.5
+    fx = np.clip(fx, 0, cols - 1); fy = np.clip(fy, 0, rows - 1)
+    x0 = np.minimum(fx.astype(int), cols - 2 if cols > 1 else 0); y0 = np.minimum(fy.astype(int), rows - 2 if rows > 1 else 0)
+    x1 = np.minimum(x0 + 1, cols - 1); y1 = np.minimum(y0 + 1, rows - 1)
+    tx = (fx - x0)[None, :]; ty = (fy - y0)[:, None]
+    out = []
+    for c in range(3):
+        g = grid[..., c]
+        top = g[y0][:, x0] * (1 - tx) + g[y0][:, x1] * tx
+        bottom = g[y1][:, x0] * (1 - tx) + g[y1][:, x1] * tx
+        out.append(top * (1 - ty) + bottom * ty)
+    return out
+
+
 def clean(in_ar, out_ar, xoff, yoff, xsize, ysize, raster_xsize, raster_ysize, buf_radius, gt, band, **kw):
-    """GDAL pixel function: balance paper, deepen colour to the reference strength, apply the look, paper to white."""
+    """GDAL pixel function: balance paper (locally), deepen colour, apply the look, paper to white, flatten fills."""
     def arg(name):
         v = kw.get(name)
         return v.decode("ascii") if isinstance(v, bytes) else v  # GDAL hands arguments over as bytes
+    _local_paper.raster = (raster_xsize, raster_ysize)
     src = [a.astype(np.float32) for a in in_ar[:3]]
     paper_rgb = arg("paper")
-    if paper_rgb:
+    local = _local_paper(arg("background"), xoff, yoff, xsize, ysize, src[0].shape)
+    if local is not None:
+        src = [np.clip(c * (PAPER_REFERENCE / np.maximum(local[i], 1.0)), 0, 255) for i, c in enumerate(src)]
+    elif paper_rgb:
         ref = [float(v) for v in str(paper_rgb).split(",")]
         src = [np.clip(c * (PAPER_REFERENCE / max(ref[i], 1.0)), 0, 255) for i, c in enumerate(src)]
     strength = float(arg("strength") or 1.0)
     if strength != 1.0:
-        src = [np.clip(PAPER_REFERENCE - strength * (PAPER_REFERENCE - c), 0, 255) for c in src]
+        spread = np.maximum(np.maximum(src[0], src[1]), src[2]) - np.minimum(np.minimum(src[0], src[1]), src[2])
+        s_eff = 1 + (strength - 1) * np.clip((spread - STRENGTH_SPREAD[0]) / (STRENGTH_SPREAD[1] - STRENGTH_SPREAD[0]), 0, 1)
+        src = [np.clip(PAPER_REFERENCE - s_eff * (PAPER_REFERENCE - c), 0, 255) for c in src]
     r, g, b = src
     mx = np.maximum(np.maximum(r, g), b); mn = np.minimum(np.minimum(r, g), b)
     paper = np.clip((PAPER_SPREAD_LIMIT - (mx - mn)) / PAPER_SPREAD_FADE, 0, 1) * np.clip((mx - PAPER_BRIGHT_START) / PAPER_BRIGHT_FADE, 0, 1)
-    i = int(band) - 1
-    lev = 255 * np.clip((src[i] - LOOK_BLACK[i]) / (LOOK_WHITE[i] - LOOK_BLACK[i]), 0, 1) ** LOOK_GAMMA[i]
     ink = np.clip((INK_NONE - mx) / (INK_NONE - INK_FULL), 0, 1)
-    lev = lev * (1 - (1 - INK_KEEP) * ink)
-    out_ar[:] = lev + (255 - lev) * paper
+    looks = []
+    for i in range(3):
+        lev = 255 * np.clip((src[i] - LOOK_BLACK[i]) / (LOOK_WHITE[i] - LOOK_BLACK[i]), 0, 1) ** LOOK_GAMMA[i]
+        lev = lev * (1 - (1 - INK_KEEP) * ink)
+        looks.append(lev + (255 - lev) * paper)
+    c1 = r - g; c2 = (r + g) / 2 - b
+    hue = np.degrees(np.arctan2(c2, c1)); light = (r + g + b) / 3
+    sat_w = np.clip((np.hypot(c1, c2) - FILL_SAT_LOW) / (FILL_SAT_HIGH - FILL_SAT_LOW), 0, 1)
+    i = int(band) - 1
+    total = np.zeros_like(r); mixed = np.zeros_like(r)
+    for centre, half, target, fill_light in FILLS:
+        d = np.abs((hue - centre + 180) % 360 - 180)
+        w = np.clip((half + FILL_HUE_FADE / 2 - d) / FILL_HUE_FADE, 0, 1)
+        a = np.clip((fill_light - FILL_INK_GAP - light) / (fill_light - FILL_INK_GAP - FILL_INK_L), 0, 1)
+        total += w; mixed += w * ((1 - a) * target[i] + a * looks[i])
+    fill = np.clip(total, 0, 1) * sat_w * (1 - paper)
+    out_ar[:] = fill * (mixed / np.maximum(total, 1e-6)) + (1 - fill) * looks[i]
 
 
 class RecipeError(ValueError):
@@ -175,7 +258,18 @@ def _srs_text(wkt: str) -> str:
     return wkt.strip()
 
 
+_SAMPLES: dict = {}
+
+
 def _sample(tif: Path | str, width: int | None, height: int | None) -> np.ndarray:
+    key = (str(tif), os.path.getmtime(tif) if os.path.exists(tif) else None, width, height)
+    if key not in _SAMPLES:
+        _SAMPLES.clear()
+        _SAMPLES[key] = _sample_uncached(tif, width, height)
+    return _SAMPLES[key]
+
+
+def _sample_uncached(tif: Path | str, width: int | None, height: int | None) -> np.ndarray:
     """A 1/16-size red, green, blue, alpha read of the sheet, via gdal_translate. The map position is dropped
     (-a_ullr) because the ENVI format refuses sheared geotransforms, such as the 1958-topo fits of 486, 493 and 494."""
     program, env = _gdalinfo()
@@ -224,6 +318,44 @@ def measure_strength(tif: Path | str, paper_rgb, width: int | None = None, heigh
     return round(min(max(s, STRENGTH_LIMITS[0]), STRENGTH_LIMITS[1]), 3)
 
 
+def measure_background(tif: Path | str, paper_rgb, width: int | None = None, height: int | None = None) -> str | None:
+    """The local-paper map as recipe text 'rows,cols;r,g,b,...' (integers), or None when the sheet has too little paper."""
+    data = _sample(tif, width, height)
+    h, w = data.shape[1:]
+    cols = BACKGROUND_COLUMNS; rows = max(2, int(round(cols * h / max(w, 1))))
+    r, g, b, a = (data[i].astype(np.float32) for i in range(4))
+    mx = np.maximum(np.maximum(r, g), b); mn = np.minimum(np.minimum(r, g), b)
+    paper = (a > 0) & (mx - mn < 35) & (mx > 100) & (mx < 252)
+    if paper.sum() < 200:
+        return None
+    grid = np.full((rows, cols, 3), np.nan, np.float32)
+    ys = np.minimum((np.arange(h) * rows) // h, rows - 1); xs = np.minimum((np.arange(w) * cols) // w, cols - 1)
+    cell = ys[:, None] * cols + xs[None, :]
+    for k in range(rows * cols):
+        m = paper & (cell == k)
+        if m.sum() >= 12:
+            grid[k // cols, k % cols] = [np.median(ch[m]) for ch in (r, g, b)]
+    floor = np.array(paper_rgb, np.float32) * BACKGROUND_FLOOR
+    for _ in range(rows + cols):  # fill cells without paper from their neighbours
+        empty = np.isnan(grid[..., 0])
+        if not empty.any():
+            break
+        padded = np.pad(grid, ((1, 1), (1, 1), (0, 0)), constant_values=np.nan)
+        neigh = np.stack([padded[1 + dy:1 + dy + rows, 1 + dx:1 + dx + cols] for dy in (-1, 0, 1) for dx in (-1, 0, 1)])
+        import warnings
+        with warnings.catch_warnings(), np.errstate(all="ignore"):
+            warnings.simplefilter("ignore", RuntimeWarning)  # cells whose neighbours are all empty stay empty this round
+            mean = np.nanmean(neigh, axis=0)
+        grid[empty] = mean[empty]
+    grid = np.where(np.isnan(grid), np.array(paper_rgb, np.float32), grid)
+    padded = np.pad(grid, ((1, 1), (1, 1), (0, 0)), mode="edge")  # smooth: 3x3 median, then 3x3 mean
+    grid = np.median(np.stack([padded[1 + dy:1 + dy + rows, 1 + dx:1 + dx + cols] for dy in (-1, 0, 1) for dx in (-1, 0, 1)]), axis=0)
+    padded = np.pad(grid, ((1, 1), (1, 1), (0, 0)), mode="edge")
+    grid = np.mean(np.stack([padded[1 + dy:1 + dy + rows, 1 + dx:1 + dx + cols] for dy in (-1, 0, 1) for dx in (-1, 0, 1)]), axis=0)
+    grid = np.clip(np.maximum(grid, floor), 1, 255)
+    return f"{rows},{cols};" + ",".join(str(int(round(v))) for v in grid.ravel())
+
+
 def render_vrt_xml(tif: Path | str) -> str:
     """The exact recipe text for one sheet TIFF. Same TIFF, same text."""
     tif = Path(tif)
@@ -245,6 +377,8 @@ def render_vrt_xml(tif: Path | str) -> str:
     paper_rgb = measure_paper(tif, facts["width"], facts["height"])
     paper_arg = ",".join(str(v) for v in paper_rgb)
     strength_arg = measure_strength(tif, paper_rgb, facts["width"], facts["height"])
+    background = measure_background(tif, paper_rgb, facts["width"], facts["height"])
+    background_arg = f' background="{background}"' if background else ""
 
     def simple_source(source_band: int) -> str:
         return (
@@ -265,7 +399,7 @@ def render_vrt_xml(tif: Path | str) -> str:
         lines.extend(simple_source(source_band) for source_band in (1, 2, 3))
         lines.append("    <PixelFunctionLanguage>Python</PixelFunctionLanguage>\n")
         lines.append(f"    <PixelFunctionType>{PIXEL_FUNCTION}</PixelFunctionType>\n")
-        lines.append(f'    <PixelFunctionArguments band="{band}" paper="{paper_arg}" strength="{strength_arg}"/>\n')
+        lines.append(f'    <PixelFunctionArguments band="{band}" paper="{paper_arg}" strength="{strength_arg}"{background_arg}/>\n')
         lines.append("  </VRTRasterBand>\n")
     lines.append('  <VRTRasterBand dataType="Byte" band="4">\n')
     lines.append("    <ColorInterp>Alpha</ColorInterp>\n")
