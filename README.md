@@ -2,7 +2,7 @@
 
 Downloads the 1911 Atlanta Sanborn fire insurance maps from the Library of Congress, works
 out where each sheet belongs on the ground, and prepares it as a georeferenced layer for
-QGIS. Current system version: **1.24**.
+QGIS. Current system version: **1.29**.
 
 Historic Sanborn maps have been scanned and publicly readable for years without being
 georeferenced, so until GIS tools came along, historical study meant holding a picture of a map beside a real map. Even with GIS georeferencing, pinning an old map to a current map accurately takes hours per map.This repository holds a local system that automates the placement of Sanborns for Atlanta.
@@ -207,7 +207,14 @@ Preserve the legacy manual workflow. Previously preferred cardinal-v2 targets fo
 the prior487 placement were superseded by September25,2026 original-topo evidence; register any
 replacement point record to its actual scan before reuse. Do not apply one tile's scale globally.
 
-2026-09-29 paper whitening (1.24): Joel approved whitening the sheet paper. QGIS shows each sheet through `<name>.clean.vrt`, a read-only recipe file beside its TIFF whose colours the trusted `sanborn_paper` module computes at draw time: levels 46 / 1.56 / 205, near-grey bright paper lifted to white, pink, yellow, tan and blue fills kept. TIFFs are never rewritten. The layer style stays Brightness 0, Gamma 1, Contrast 0, no channel stretch, opacity 1 and alpha band 4. QGIS needs two environment settings, `GDAL_VRT_ENABLE_PYTHON=TRUSTED_MODULES` and `GDAL_VRT_PYTHON_TRUSTED_MODULES=sanborn_paper`; the importer stops before any change when they are missing. Tune the look only in `tools/sanborn_paper.py`, then run `python3 tools/sanborn_paper.py install-module` and `python3 tools/sanborn_paper.py backfill "1911 SANBORN DOWNLOADS"`. This supersedes the 2026-09-25 rule that preserved the original TIFF appearance.
+## The finished 1911 atlas (1.24-1.29, September 2026)
+
+All 393 placed sheets of the 1911 Atlanta Sanborn atlas are in QGIS with one consistent look Joel specified: paper
+pure white on every sheet, fills in four exact colours (pink, orange, yellow, blue), black ink and light sharpening.
+The colour is computed by `tools/sanborn_paper.py` and baked into the files, so QGIS draws them quickly: full
+resolution up close, one merged low-resolution layer for the whole city. Inset maps printed on 24 sheets are split
+out as their own layers. Uncompressed archive copies are kept on a separate RAID. `ATLAS FINISHING.md` explains
+every decision, the scripts and the gotchas.
 
 ## Completed evidence and new reviews (1.18)
 
