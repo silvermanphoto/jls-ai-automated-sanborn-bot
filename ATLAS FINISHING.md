@@ -86,6 +86,27 @@ were whitened inside the TIFFs by `_local/claude/ladder/whiten_edges.py`.
 - QGIS opens on downtown Atlanta (Five Points) at every launch, new project and project open, set in
   `~/Library/Application Support/QGIS/QGIS3/startup.py`, because crash restarts kept opening at 0,0 off Africa.
 
+## 4a. Speed: the fast view (2026-09-30)
+
+- **Default view is the tile pyramid** `1911 Sanborns - fast view (tile pyramid)`, second item in the Sanborns folder:
+  WEBP XYZ tiles in `1911 SANBORN BAKED/tiles/{z}/{x}/{y}.webp`, zoom 12-21 (1.2 GB, 215,199 tiles). Zooms 17-21
+  are rendered from the 419 full-res sheets and insets in layer-tree order (top sheet wins), 12-16 from the Darken
+  merge, so it looks the same as the layer stack. A never-seen close view draws in about 2 s, a revisited one in
+  1.5 s; the per-sheet stack took 13-17 s. Built by `_local/claude/bake/build_tiles.sh` (GDAL 3.12 from
+  `/Applications/QGIS-final-4_0_0.app`, 9 processes, 17 min); delete `tiles/` before rebuilding or moved sheets
+  leave old tiles behind.
+- **The per-sheet layers stay for editing**: the four quadrant folders, INSET MAPS and the merged layer are switched
+  off, not removed. Switch a folder on to toggle or inspect single sheets.
+- **Close-zoom files are JPEG** (Joel, 2026-09-30): layers read `1911 SANBORN BAKED/full_jpeg/` and `insets_jpeg/`
+  (quality 90, overviews 2-32, 2.8 GB against 6.2 GB lossless; mean colour difference 0.1-1.5 of 255, masks
+  identical). The lossless `full/` and `insets/` files and the RAID archive are unchanged and remain the masters.
+- **After any sheet changes** (on top of section 4b): make its JPEG copy (as in the agent's recipe: gdal_translate
+  JPEG q90 YCbCr 512 tiles with the mask, overviews 2-32 q85), repoint its layer, and rebuild the tile pyramid.
+- **The slowest thing left is the web basemaps.** Open Street Map or Google layers add tens of seconds to a fresh
+  view; switch them off when working on the Sanborns.
+- QGIS now renders in parallel on all cores with a 2 GB GDAL cache (QGIS settings, effective after a restart).
+- Spotlight indexes the 215,000 tile files after every rebuild and loads the disk for a while.
+
 ## 4b. Safety net and records (added 2026-09-30 on a second review)
 
 - **After any change to the master, run `_local/claude/bake/check_master.py` inside QGIS before saving.** It checks

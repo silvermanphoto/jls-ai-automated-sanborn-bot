@@ -146,6 +146,7 @@ Full account, rationale and commands: `ATLAS FINISHING.md`. The rules that must 
 - Joel's colour spec: paper pure white and matching on every sheet; fills pink #e29cac, orange #daa15a, yellow #edd24d, blue #89b2c7; black ink; unsharp mask 15% / 3.4 px / threshold 1. Change the look only in `tools/sanborn_paper.py`, then re-bake.
 - The uncompressed archive GeoTIFFs live on Skychief's ThunderBay RAID (`H:\2026 Files\26-032 Sanborn Georeferencer\1911 Atlanta Sanborns - archive GeoTIFF (uncompressed)\`), never on the MacBook. Keep the LOC .jp2 scans; every refit starts from them.
 - Nothing Joel cuts is discarded: inset maps become their own `Tile N INSET MAP` layers, parents are backed up first.
-- After any sheet is refit or replaced: whiten edges, `bake_one.py`, update its QGIS layer, rebuild the merged layer, the sheet index and the white backing, and check for duplicate layers.
+- The default view is the tile pyramid layer (`1911 SANBORN BAKED/tiles/`); per-sheet layers are switched off but kept for editing, and read the JPEG copies in `full_jpeg/` (lossless `full/` and the RAID stay the masters).
+- After any sheet is refit or replaced: whiten edges, `bake_one.py`, its JPEG copy, update its QGIS layer, rebuild the merged layer, sheet index, white backing and tile pyramid (`build_tiles.sh`, delete `tiles/` first), then run `check_master.py`.
 - A hole whose rim labels all name one sheet means that sheet is misplaced (Tile 353, 2026-09-30). Rough seeds ("mean of neighbours") need checking.
 - Restart QGIS after changing the paper module; reloading it in place crashes QGIS. QGIS opens on downtown Atlanta via its `startup.py`.
