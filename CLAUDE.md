@@ -13,6 +13,12 @@ HARD RULE (Joel, 2026-09-28): every Sanborn sheet is fitted with rotation + unif
 - HARD RULE, read the map first: for a sheet the automation can't place, read its compass rose for the rotation, list its printed names and landmarks, look each up today (including the historic names of renamed streets, railways and water), pick distinct corner points (never a spot somewhere along a street or track), fit the similarity, and only then refine with the neighbour seams. Never build search or matching tools before doing this. Joel: "This must never happen again", after he placed Tile 174 in minutes from Mayson Ave, New St, the pond and the railroad, which days of automation had missed.
 - Precision-requirement override: Tiles 77, 174 and 178 may sit tens of metres off at street level ("this level of imprecision is acceptable for these very difficult to place tiles"). They are exempt from the 15 m pass test; the similarity rule still holds. For any other sheet that can't meet the standard, ask Joel for a precision-requirement override.
 - When the QGIS MCP connection drops, retry once, then ask Joel to turn it back on (Start Server, port 9877) before any step that needs QGIS. Never work around it.
+- MAJOR RULE, hard sheets against known sheets: Joel asked for a rule that forces "check HARD ONES against KNOWN ONES when they are adjacent on the master index key", then to "align roads that run E-W, N-S, NE-SW, NW-SE etc between the old maps", and then to "ask me to approve any imprecisions and place it in QGIS".
+  - List the hard sheet's neighbours on the orthorectified index key.
+  - Use only the KNOWN ones: sheets whose streets verify against today's map and whose other seams agree.
+  - Make every road that crosses or runs along a shared edge continue in the same direction and at the same place, with corners meeting.
+  - Fit the similarity and report the imprecision left at each seam in metres.
+  - Place the sheet in QGIS for Joel's review and ask him to approve the imprecision.
 
 ## Public software, private data
 
