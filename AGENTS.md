@@ -17,7 +17,7 @@ Use the master instruction manual in this folder as the operating source of trut
 ## Safety invariants
 
 - Never overwrite a source JP2, TIFF, point file, or accepted georeferenced output.
-- Never save or close `/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/JLS Master Map File with 1911 Sanborns.qgz` unless Joel explicitly authorizes it in that turn. (2026-09-28: Joel re-saved the master under this name; the former `JLS Master Map File.qgz` is history, named only by older ledgers.)
+- Saving the master `JLS Master Map File with 1911 Sanborns.qgz` is allowed under Joel's standing permission (dated copies are kept automatically); check the layer invariants first (`_local/claude/bake/check_master.py`). Never close QGIS with unsaved work.
 - Keep Global Opacity at 100%. Use a real alpha band for empty warp areas; never make black map ink transparent.
 - Apply QGIS Layer Rendering values Brightness 0, Gamma 1.0, and Contrast 0; disable channel stretching to completed Sanborn rasters.
 - Immediately collapse every completed Sanborn raster's layer-tree entry after loading it so its Band 1 (Red), Band 2 (Green), and Band 3 (Blue) legend rows stay closed by default.
@@ -43,6 +43,8 @@ Use the master instruction manual in this folder as the operating source of trut
   `measure_paper` as well as `read_raster_facts`.
 
 ### 2026-09-29 — Version 1.24, paper whitening through recipe files
+
+SUPERSEDED the same day: QGIS no longer draws the Sanborns through recipe files. The colour (extended through 1.29) is baked into the files under `1911 SANBORN BAKED/`; see `ATLAS FINISHING.md`. The recipe code and its tests remain in the engine and `sanborn_batch.py finish` still writes a recipe beside a finished TIFF, but the atlas path is: fit -> `_georeferenced.tif` -> bake.
 
 - Every finished sheet gets `<name>.clean.vrt` beside its TIFF (`tools/sanborn_paper.py`):
   RGB bands are GDAL Python pixel functions `sanborn_paper.clean`, band 4 passes the
@@ -235,7 +237,7 @@ Remote: `origin` using HTTPS. After every commit, push to keep GitHub in sync.
 6. Keep production databases and working map records local in this public repository. This scoped privacy exception overrides the general database-backup rule. Never delete local data when untracking it. Separately reviewed, deliberately published datasets need their own authorization.
 7. Use clean commit authorship. Never add AI co-author or generation-credit trailers.
 
-2026-09-29 paper whitening (1.24): Joel approved whitening the sheet paper. QGIS shows each sheet through `<name>.clean.vrt`, a read-only recipe file beside its TIFF whose colours the trusted `sanborn_paper` module computes at draw time: levels 46 / 1.56 / 205, near-grey bright paper lifted to white, pink, yellow, tan and blue fills kept. TIFFs are never rewritten. The layer style stays Brightness 0, Gamma 1, Contrast 0, no channel stretch, opacity 1 and alpha band 4. QGIS needs two environment settings, `GDAL_VRT_ENABLE_PYTHON=TRUSTED_MODULES` and `GDAL_VRT_PYTHON_TRUSTED_MODULES=sanborn_paper`; the importer stops before any change when they are missing. Tune the look only in `tools/sanborn_paper.py`, then run `python3 tools/sanborn_paper.py install-module` and `python3 tools/sanborn_paper.py backfill "1911 SANBORN DOWNLOADS"`. This supersedes the 2026-09-25 rule that preserved the original TIFF appearance.
+2026-09-28 to 2026-09-30: how the atlas was finished (colour, baked files, merged far-zoom layer, RAID archive, inset maps, QGIS layout) is in `ATLAS FINISHING.md`.
 
 ## Public publication boundary — 2026-09-25
 

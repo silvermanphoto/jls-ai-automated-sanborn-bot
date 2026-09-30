@@ -86,6 +86,42 @@ were whitened inside the TIFFs by `_local/claude/ladder/whiten_edges.py`.
 - QGIS opens on downtown Atlanta (Five Points) at every launch, new project and project open, set in
   `~/Library/Application Support/QGIS/QGIS3/startup.py`, because crash restarts kept opening at 0,0 off Africa.
 
+## 4b. Safety net and records (added 2026-09-30 on a second review)
+
+- **After any change to the master, run `_local/claude/bake/check_master.py` inside QGIS before saving.** It checks
+  the counts (393 sheets, 24 insets), duplicates, missing files, alpha band, blend, the 1:4000 switch, folders, the
+  merged layer, the index and the backing. It exists because the Tile 474 INSET MAP layer vanished from the project
+  unnoticed between two saves; none of the earlier spot checks would have caught it.
+- **`1911 SANBORN BAKED/manifest.json`** (`write_manifest.py`) lists every baked file with its geotransform, size,
+  archive path, fit record and status; `_ARCHIVE README.txt` beside it (also on the RAID) names the archive files
+  that are superseded (the five APPROXIMATE duplicates and the engine's Tile 485).
+- **Where each sheet's fit came from:** ladder placements in `<Map Book>/_sanborn-ladder-runs/tile-NNNN/`
+  (`result.json`, `resim.json`, `refit.json`) with `_ladder.points` beside the LOC scan; the deskewed 474/486/493/494 in
+  `_local/claude/bake/deskew.json`; sheets the engine or the overnight team placed in `batch/reviews/tile-NNNN/`.
+  Regenerating the atlas from the .jp2 scans needs those records; the baked files carry only the north-up output grid.
+- **Folder names are Joel's to change.** He appends number ranges (`SOUTHEAST ATL (#451-549)`); anything that finds a
+  quadrant folder must match by prefix. The ladder does now. The engine importer (`tools/sanborn_qgis.py`) still
+  requires exact names, no extra folders and no layers directly in the group, so it refuses the current master;
+  route new sheets through the ladder and bake path until that importer is updated.
+- **Three Pythons:** QGIS's `python3` (3.9: osgeo, numpy, scipy, PIL 7) runs anything that touches GDAL in-process;
+  `/Library/Frameworks/.../3.12` has cv2 and scipy but no osgeo (call `gdalinfo`/`gdal_translate` as programs);
+  `/usr/local/bin/python3.12` runs the engine tests. `refit_sheet.py` needs the second, `bake_one.py` the first.
+- **Speed:** the merged layer draws the city in under a second; with Google Satellite switched on the same view took
+  14-68 s, all of it tile downloads. When QGIS feels slow, check the web basemaps first.
+- **Open gaps (2026-09-30, from `fp_mask` of the merged layer, ground m²):** 185,000 at -9392270, 3995086 (Oakland
+  Cemetery, never mapped); 70,000 at -9396081, 3997402; 64,000 at -9395065, 3997442; 50,000 at -9394958, 3996094;
+  41,000 at -9396828, 3993479; 12,000 at -9393079, 3996361; 10,000 at -9395094, 3998246; 10,000 at -9396462,
+  3993750; 8,000 at -9395504, 3998010. Check each the way 353 was checked (render, read the rim labels).
+- **Tiles 32 and 174** were baked and archived but missing from QGIS; the previous summary counted 393 sheets and
+  never asked why the LOC's 395 were not all there. Tile 32 (engine-verified, held only by the old strict QC) lines up
+  with Jett, Neal, Proctor, Jones, Chestnut and Griffin and was added 2026-09-30 (394 sheets). Tile 174's ladder fit
+  failed the 15 m gate; over OSM it sits plausibly along the Southern rail line at Mayson Av / 1st St / New St but is
+  unverified and stays out until Joel decides. Lesson: reconcile the sheet count against the catalog, not the layer list.
+- **Parked:** the single full-resolution overlay (one seamless image, no ghosting, insets removed). Draft real-map
+  outlines are in the hidden QGIS group "1911 OVERLAY - sheet map areas" and `overlay/sheet map areas (edit me).gpkg`;
+  the inset cuts are done. Remaining: cut seams along streets, mosaic at full resolution (about 5-10 GB), add as one
+  layer.
+
 ## 5. Gotchas found on the way
 
 - Never reload the `sanborn_paper` module inside a running QGIS; it crashed QGIS (SIGSEGV). Restart instead.
@@ -97,6 +133,7 @@ were whitened inside the TIFFs by `_local/claude/ladder/whiten_edges.py`.
 - The ENVI driver refuses sheared geotransforms; sample with `-a_ullr 0 1 1 0`.
 - The QGIS MCP connection has one slot; other clients (Codex, the Claude app) can take it. Joel clicks Start Server.
 - Port 8765 is taken by another local app; the Inset Cutter uses 8791.
+- Two Trash folders hold 71 GB of superseded sheet files until Joel empties the Trash; the baked and archived files do not depend on them.
 - A cleanup pass found five approximate sheets loaded twice, a hidden skewed 486 copy and a duplicate base map.
   After placing or replacing sheets, check for two layers per tile and rebuild the merged layer from the kept set.
 

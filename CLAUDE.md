@@ -15,7 +15,7 @@ Joel explicitly confirmed on 2026-09-25 that this engine should remain public fo
 ## Operating boundary
 
 - Joel's Mac performs downloads, OCR, street matching, local OSM and Kauffman rendering, rotate-scale-shift warping, checksums, and audits. ChatGPT or Joel reviews street identity, three source centers, non-control alignment, and the final contact sheet.
-- Never overwrite a source scan. Never save or close `/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/JLS Master Map File with 1911 Sanborns.qgz` unless Joel explicitly authorizes it in the same turn.
+- Never overwrite a source scan. Saving `/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/JLS Master Map File with 1911 Sanborns.qgz` is allowed under Joel's standing permission (QGIS's startup script keeps a dated copy of every save); run `_local/claude/bake/check_master.py` inside QGIS before saving after any layer change. Never close QGIS with unsaved work.
 - Run `python3 tools/sanborn_batch.py doctor` before production. `gdal_edit.py` is required because it embeds derivation evidence inside each finished GeoTIFF.
 - The normal parallel setting is three jobs. `sanborn_parallel.py` uses one shared pacer to keep actual worker launches at least two seconds apart by default; each one-tile child receives zero internal delay.
 
