@@ -2,7 +2,7 @@
 
 > Open findings from the 2026-09 code review: ~/.claude/overseer/reviews/2026-09/jls-ai-automated-sanborn-bot.md and ~/.claude/overseer/reviews/2026-09/sanborn-comparison.md. Mention them to Joel at the start of each session; delete this line once none are open.
 
-Use the local-first version 1.29 workflow. Read `AGENTS.md` for standing safety rules, `LOCAL BATCH ENGINE.md` for commands, and `AI AUTOMATED SANBORN BOT - MASTER INSTRUCTIONS.md` for the full evidence policy. Keep explanations in plain English, lead with the result, and make only the change asked for.
+Use the local-first version 1.30 workflow. Read `AGENTS.md` for standing safety rules, `LOCAL BATCH ENGINE.md` for commands, and `AI AUTOMATED SANBORN BOT - MASTER INSTRUCTIONS.md` for the full evidence policy. Keep explanations in plain English, lead with the result, and make only the change asked for.
 
 ## Sheet fitting — hard rule
 
@@ -55,7 +55,7 @@ Reviewer and note are mandatory. `--replace-existing` deliberately supersedes an
 - Every completed raster uses opacity 1.0, Brightness 0, Gamma 1.0, Contrast 0 (no channel stretch), and alpha band 4; since 2026-09-29 Joel's colour work is baked into the files, not applied as layer styling. Generated QGIS code must perform duplicate preflight and rollback and must contain no project-save call.
 - Earlier live Tile 236 evidence used an equivalent hash-bound plan, not a live schema-3 manifest. The present schema-3 revision was exercised in the installed QGIS 3.42.1 runtime with the real index and synthetic tiles; the unavailable QGIS MCP connection prevented a current run against Joel's open protected project. Keep those claims separate.
 
-Version 1.29 passes all 233 engine tests under the python.org Python 3.12 (`/usr/local/bin/python3.12 -m unittest discover -s tests`) with QGIS's GDAL appended to PATH, including real warping, embedded-provenance resume checks and a real read of a paper recipe through QGIS's GDAL. When using QGIS GDAL, set PROJ_LIB and PROJ_DATA to its Contents/Resources/proj folder and GDAL_DATA to Contents/Resources/gdal.
+Version 1.30 passes all 234 engine tests under the python.org Python 3.12 (`/usr/local/bin/python3.12 -m unittest discover -s tests`) with QGIS's GDAL appended to PATH, including real warping, embedded-provenance resume checks and a real read of a paper recipe through QGIS's GDAL. When using QGIS GDAL, set PROJ_LIB and PROJ_DATA to its Contents/Resources/proj folder and GDAL_DATA to Contents/Resources/gdal.
 
 
 2026-09-25 review integrity (1.18): Completed rasters validate against their frozen evidence, preserving their original renderer and software provenance. New approvals and warps still require current inputs and software. Archive validation may preserve withdrawn results but must never authorize their import. Sheets 486, 487, 493 and 494 require a fresh original-1958-topo packet with at least three independent checks before approval, finishing or import. Reopening retires active queue links while retaining historical evidence; failed archives restore originals and remove partial copies only after verified recovery.

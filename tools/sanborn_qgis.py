@@ -958,7 +958,14 @@ def _sanborn_subfolder_name(tile):
 
 
 def _sanborn_containers(group):
-    """The nodes that hold sheet layers: the area subfolders, or the group itself."""
+    """The nodes that hold sheet layers: the area subfolders, or the group itself.
+
+    Joel renames the folders by appending number ranges ("SOUTHEAST ATL (#451-549)"),
+    so a folder is matched by its canonical name as a prefix and reported under that
+    canonical name. Since 2026-09-30 the atlas's own helpers sit beside the folders
+    and are skipped: the INSET MAPS folder and the layers named "1911 Sanborns - ..."
+    (sheet index, merged far-zoom layer, white backing). A sheet layer loose in the
+    group, or a folder with any other name, still fails."""
     folders = _sanborn_subfolders()
     if not folders:
         return [(group, None)]
@@ -966,19 +973,27 @@ def _sanborn_containers(group):
     found = []
     for node in group.children():
         if not isinstance(node, QgsLayerTreeGroup):
-            _sanborn_fail(
-                "layer {!r} sits directly in the Sanborn group instead of an area "
-                "subfolder".format(node.name())
-            )
-        if node.name() not in order:
+            if _sanborn_tile_number(node.name()) is not None and "INSET MAP" not in node.name():
+                _sanborn_fail(
+                    "layer {!r} sits directly in the Sanborn group instead of an area "
+                    "subfolder".format(node.name())
+                )
+            continue
+        canonical = next(
+            (name for name in order if node.name() == name or node.name().startswith(name + " ")),
+            None,
+        )
+        if canonical is None:
+            if node.name() == "INSET MAPS":
+                continue
             _sanborn_fail("the Sanborn group contains an unexpected subfolder {!r}".format(node.name()))
-        found.append(node)
-    names = [node.name() for node in found]
+        found.append((node, canonical))
+    names = [canonical for _, canonical in found]
     if len(set(names)) != len(names):
         _sanborn_fail("the Sanborn group contains the same area subfolder more than once")
     if names != sorted(names, key=order.index):
         _sanborn_fail("the Sanborn area subfolders are out of order: " + ", ".join(names))
-    return [(node, node.name()) for node in found]
+    return found
 
 
 def _sanborn_sheet_container(group, tile):

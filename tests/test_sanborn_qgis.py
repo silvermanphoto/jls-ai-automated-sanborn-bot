@@ -1204,6 +1204,31 @@ class SanbornQgisPlanTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, pattern):
                     self._quadrant_helpers()["_sanborn_check_group_contents"](build(), {})
 
+    def test_quadrant_layout_accepts_joels_renamed_folders_and_the_atlas_helpers(self):
+        # 2026-09-30: Joel appends number ranges to folder names, and the finished atlas keeps an
+        # INSET MAPS folder and three helper layers beside the quadrant folders. None of that is a defect.
+        helpers = self._quadrant_helpers()
+        index = FakeLayerNode(FakeRasterLayer("/tmp/1911 Sanborns sheet index.gpkg",
+                                              "1911 Sanborns - sheet index (click to identify)", "index"))
+        merged = FakeLayerNode(FakeRasterLayer("/tmp/1911 Sanborns 20pct mosaic (darken).tif",
+                                               "1911 Sanborns - merged 20% (far zoom)", "merged"))
+        inset = FakeLayerNode(FakeRasterLayer("/tmp/Sanborn 1911 -- Tile 37 INSET MAP.tif",
+                                              "Sanborn 1911 - Tile 37 INSET MAP", "inset-37"))
+        northeast = FakeGroup([self._sheet(151)], name="NORTHEAST ATL")
+        northwest = FakeGroup([self._sheet(37)], name="NORTHWEST ATL")
+        southeast = FakeGroup([self._sheet(486)], name="SOUTHEAST ATL (#451-549)")
+        southwest = FakeGroup([self._sheet(301)], name="SOUTHWEST ATL (#301-397)")
+        group = FakeGroup([index, northeast, northwest, southeast, southwest,
+                           FakeGroup([inset], name="INSET MAPS"), merged], name=GROUP_NAME)
+        helpers["_sanborn_check_group_contents"](group, {})
+        self.assertEqual(helpers["_sanborn_folder_order"](group), [
+            ("NORTHEAST ATL", [151]), ("NORTHWEST ATL", [37]),
+            ("SOUTHEAST ATL", [486]), ("SOUTHWEST ATL", [301]),
+        ])
+        self.assertIs(helpers["_sanborn_sheet_container"](group, 505), southeast)
+        self.assertEqual({node.layerId() for node in helpers["_sanborn_sheet_nodes"](group)},
+                         {"tile-151", "tile-37", "tile-486", "tile-301"})
+
     def test_rollback_treats_sheets_inside_quadrant_folders_as_inside_the_group(self):
         helpers = generated_helper_namespace()
         sheet = self._sheet(236)

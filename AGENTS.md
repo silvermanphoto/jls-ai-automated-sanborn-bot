@@ -42,6 +42,13 @@ Use the master instruction manual in this folder as the operating source of trut
 - GDAL passes pixel-function arguments as bytes; `clean` decodes them. Tests that stand in fake TIFFs must stub
   `measure_paper` as well as `read_raster_facts`.
 
+### 2026-09-30 — Version 1.30, the importer accepts Joel's folder names and the atlas helpers
+
+- Quadrant folders are matched by canonical name as a prefix (`SOUTHEAST ATL (#451-549)` is `SOUTHEAST ATL`)
+  and reported under the canonical name. The INSET MAPS folder and the helper layers named `1911 Sanborns - ...`
+  beside the folders are skipped. A sheet layer loose in the group or a folder with any other name still fails.
+  Before 1.30 the importer refused the finished master outright.
+
 ### 2026-09-29 — Version 1.24, paper whitening through recipe files
 
 SUPERSEDED the same day: QGIS no longer draws the Sanborns through recipe files. The colour (extended through 1.29) is baked into the files under `1911 SANBORN BAKED/`; see `ATLAS FINISHING.md`. The recipe code and its tests remain in the engine and `sanborn_batch.py finish` still writes a recipe beside a finished TIFF, but the atlas path is: fit -> `_georeferenced.tif` -> bake.

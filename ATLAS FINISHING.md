@@ -100,9 +100,9 @@ were whitened inside the TIFFs by `_local/claude/ladder/whiten_edges.py`.
   `_local/claude/bake/deskew.json`; sheets the engine or the overnight team placed in `batch/reviews/tile-NNNN/`.
   Regenerating the atlas from the .jp2 scans needs those records; the baked files carry only the north-up output grid.
 - **Folder names are Joel's to change.** He appends number ranges (`SOUTHEAST ATL (#451-549)`); anything that finds a
-  quadrant folder must match by prefix. The ladder does now. The engine importer (`tools/sanborn_qgis.py`) still
-  requires exact names, no extra folders and no layers directly in the group, so it refuses the current master;
-  route new sheets through the ladder and bake path until that importer is updated.
+  quadrant folder must match by prefix. The ladder does now, and since engine 1.30 so does
+  the importer (`tools/sanborn_qgis.py`), which also tolerates the INSET MAPS folder and the three helper layers
+  beside the quadrant folders; before 1.30 it refused the current master outright.
 - **Three Pythons:** QGIS's `python3` (3.9: osgeo, numpy, scipy, PIL 7) runs anything that touches GDAL in-process;
   `/Library/Frameworks/.../3.12` has cv2 and scipy but no osgeo (call `gdalinfo`/`gdal_translate` as programs);
   `/usr/local/bin/python3.12` runs the engine tests. `refit_sheet.py` needs the second, `bake_one.py` the first.
@@ -116,7 +116,7 @@ were whitened inside the TIFFs by `_local/claude/ladder/whiten_edges.py`.
   never asked why the LOC's 395 were not all there. Tile 32 (engine-verified, held only by the old strict QC) lines up
   with Jett, Neal, Proctor, Jones, Chestnut and Griffin and was added 2026-09-30 (394 sheets). Tile 174's ladder fit
   failed the 15 m gate; over OSM it sits plausibly along the Southern rail line at Mayson Av / 1st St / New St but is
-  unverified and stays out until Joel decides. Lesson: reconcile the sheet count against the catalog, not the layer list.
+  never point-verified; Joel chose to add it as a normal sheet (2026-09-30), so the atlas is 395 sheets, the LOC's full count. Lesson: reconcile the sheet count against the catalog, not the layer list.
 - **Parked:** the single full-resolution overlay (one seamless image, no ghosting, insets removed). Draft real-map
   outlines are in the hidden QGIS group "1911 OVERLAY - sheet map areas" and `overlay/sheet map areas (edit me).gpkg`;
   the inset cuts are done. Remaining: cut seams along streets, mosaic at full resolution (about 5-10 GB), add as one

@@ -2,7 +2,7 @@
 
 Downloads the 1911 Atlanta Sanborn fire insurance maps from the Library of Congress, works
 out where each sheet belongs on the ground, and prepares it as a georeferenced layer for
-QGIS. Current system version: **1.29**.
+QGIS. Current system version: **1.30**.
 
 Historic Sanborn maps have been scanned and publicly readable for years without being
 georeferenced, so until GIS tools came along, historical study meant holding a picture of a map beside a real map. Even with GIS georeferencing, pinning an old map to a current map accurately takes hours per map.This repository holds a local system that automates the placement of Sanborns for Atlanta.
