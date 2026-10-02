@@ -107,6 +107,37 @@ were whitened inside the TIFFs by `_local/claude/ladder/whiten_edges.py`.
 - QGIS now renders in parallel on all cores with a 2 GB GDAL cache (QGIS settings, effective after a restart).
 - Spotlight indexes the 215,000 tile files after every rebuild and loads the disk for a while.
 
+## 4c. Simplified layers (2026-10-02)
+
+Joel: "I just want it simplified and to look amazing from every level of detail, and to be able to host a website
+where the opacity can be clicked on/off, and I want it organized so that in qGIS I can individually turn on/off layers.
+But I don't want unnecessary multiples of things." Plan picture: the georeferencer app's
+`docs/diagrams/1911-layer-simplification.mmd` (approved 2026-10-02).
+
+- **One atlas layer.** `1911 Atlanta Sanborns - atlas` = the tile pyramid, now zoom 9-21 (zooms 9-11 new, for
+  city-wide and regional views) with the white paper baked in: `build_tiles.py` rasterizes the white-backing outline
+  to `mosaic/1911 Sanborns white backing (raster).tif` (on the merged file's 0.3 m grid, rebuilt when the outline is
+  newer) and draws it under every sheet in both passes. 215,997 tiles, 1.6 GB, 32 min. The same folder of tiles is
+  what a website would serve; hosting and public or private are Joel's decision.
+- **Sheets one layer each, at every zoom.** The 1:4000 limit is gone; each file's overviews (down to 1/32) do the
+  level-of-detail work. Measured city-wide: one sheet instant, one quadrant (97) 2.1 s and all 419 layers 8.7-11.6 s
+  when first opened, 0.7 s once QGIS has them open; the atlas under 1 s.
+- **Out of the project:** the merged far-zoom layer and the white backing (files kept; both feed `build_tiles.py`).
+- **Sheet index:** kept in the project but out of the Layers panel (`addMapLayer(layer, False)`), because the hover
+  tool (Floating Info Tool fork) and the right-click menu find it by its name prefix. Removing its panel entry removes
+  the layer from the project even with the registry bridge disabled; `simplify_master.py` removes it and adds it back.
+- **Right-click menu** (Layers Under Click 1.1, source only in the QGIS profile plugins folder; 1.0 saved as
+  `_local/claude/layers_under_click_v1_2026-10-02.py`): also lists every sheet and inset whose outline is under the
+  click, marked "(off)" when switched off; choosing one selects it in the Layers panel. The atlas is listed only over
+  the atlas.
+- **Map themes** "Atlas" (atlas on, sheets off) and "Sheets" (atlas off, sheets on). A QGIS theme stores every layer's
+  visibility, so it also restores the basemap that was on when it was made (Google Hybrid).
+- Scripts: `simplify_master.py` (the one-time change), `check_master.py` (updated invariants; previous version
+  `check_master_v1_2026-09-30.py`), `build_tiles.py` (previous version `build_tiles_v1_2026-09-30.py`). Old tiles:
+  `1911 SANBORN BAKED/superseded/2026-10-02 layer simplification/tiles`.
+- Open, not part of this change: `1883-1894 Cram's Map of Atlanta` points at the Ward Map's file
+  (`1883-1894 Atlanta Ward Map.tif`), so `check_master.py` reports one file loaded twice.
+
 ## 4b. Safety net and records (added 2026-09-30 on a second review)
 
 - **After any change to the master, run `_local/claude/bake/check_master.py` inside QGIS before saving.** It checks
