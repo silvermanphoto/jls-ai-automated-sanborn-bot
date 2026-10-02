@@ -138,6 +138,33 @@ But I don't want unnecessary multiples of things." Plan picture: the georeferenc
 - Open, not part of this change: `1883-1894 Cram's Map of Atlanta` points at the Ward Map's file
   (`1883-1894 Atlanta Ward Map.tif`), so `check_master.py` reports one file loaded twice.
 
+## 4d. Floater cleanup (2026-10-02)
+
+Joel: "Do you see the pointless and messy 'stranded' white floaters in tiles like 467? I want them cleaned up
+judiciously and carefully. This *includes* 'floating rosettes', any cardinal direction rosettes that are
+well-integrated into their tile obviously may stay, but an 'additional' stranded rosette must be cut out along with
+the white 'floaters.' However, do NOT remove floating numbers like the '467' shown. That must be closely cut out and
+left in place." He approved Tile 467 as the standard, said to leave ragged edges attached to the map alone, and to
+keep neighbouring-sheet reference numbers too (closely cut, like the sheet's own number).
+
+- **What an island is.** Each connected piece of a sheet's visible area (full resolution, 8-connected); the largest
+  is the map and is never touched. Islands with no drawing (under 1 m2 of ink or fill colour) were cut without review.
+- **Review.** 1,944 islands with drawing went on cards (`_local/claude/bake/align/v3_rebuild/floaters/cards_all`).
+  Opus Low decided every card (32 batches); Opus Medium re-decided 250 targeted cards (16 batches) and overturned
+  53 of 946 sampled Low cuts (5.6%, under the 15% re-review line). The lead settled the 79 disagreements, kept the
+  "Tile N INSET MAP" label letters on insets, and cut kept map scraps that a neighbouring sheet already draws
+  (`keep_cover.py`). Final: 479 islands kept or close-cut, the rest cut.
+- **Close cut** (`floaters.py number_keep`): ink letters, grown 0.5 m, gaps under 1 m joined, holes filled. A ruled
+  line touching a digit keeps only strokes thicker than 7 px (big digits are 14-40 px, lines 4-6). Four islands with
+  a stranded rose beside the number (176, 329, 331, 96) keep only lettering inside a named box.
+- **Far-zoom copies.** A file's overviews (and the 20% copy) lose a cell only when most of it was cut; the first
+  write used "any part cut" and turned close-cut numbers into specks at far zoom, so every file was restored and
+  written again.
+- **Files.** Masks edited in place in `full/`, `full_jpeg/`, `20pct/`, `insets/`, `insets_jpeg/`; the files before
+  are in `1911 SANBORN BAKED/superseded/2026-10-02 floater cuts (files before)/`. `rebuild.sh` then rebuilt the
+  merged far-zoom file, the sheet index and white backing outlines, and the atlas tiles (old ones in
+  `superseded/2026-10-02 floater cuts (merged layers)/`).
+
 ## 4b. Safety net and records (added 2026-09-30 on a second review)
 
 - **After any change to the master, run `_local/claude/bake/check_master.py` inside QGIS before saving.** It checks
