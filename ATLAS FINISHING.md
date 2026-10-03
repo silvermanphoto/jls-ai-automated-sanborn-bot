@@ -259,8 +259,27 @@ own waste cut slices through both, and the far-zoom Darken blend overlays them. 
 - **Files.** Files before are in `1911 SANBORN BAKED/superseded/2026-10-03 street-name seams (files before)/`;
   `labels/rebuild.sh` rebuilt the merged file, outlines, backing and tiles in 89 min (old ones in `superseded/2026-10-03
   street-name seams (merged layers)`); master checked (only the Cram/Ward duplicate) and saved.
-- **Open.** The 243 and the 327 need letters restored from the original scans. At far zoom the Darken blend shows
-  Tile 359's tan page edge as an orange line through Tile 338's houses north of Richardson St.
+- **Second pass, tighter cut** (same day). The 243 sorted by kind (`kinds.py`, `kinds.json`): 100 cut on every sheet,
+  95 where a whole copy exists but showing it blanked nearby print, 36 stray or doubled pieces, 12 overlaps printed
+  that way (left as printed, Joel's choice). The 131 middle cases re-cut by `plan2`: other sheets go off only over
+  their own copy of the name (`copy_in_line`: in line with the label, letter size and stroke, two or more in a row)
+  and a 0.3 m strip round the owner's letters. Opus Low then Opus High on every card, High settling; 24 agents,
+  2,200,343 tokens; 46 fixed (`decisions2.json`), 81 still cut (`none2.json`).
+- **Restore** (Joel: pilot of 10, then all 427). A sheet's trim only switches its mask off; the letters are still in
+  the file. `plan_restore` finds the label's hidden letters on its line (`hidden_letters`), switches the mask back on
+  over them (`write_uncut`) and switches other sheets off over their copies (search 2.5 letter heights off the line, a
+  run followed past the search length). Pilot picture `labels/restore/pilot_10.jpg`; 15 of 33 tried came out clean.
+  All 427: 197 had no hidden letters to find; 230 cards, same review, 36 agents, 3,612,893 tokens; 74 restored
+  (`restore/decisions.json`), 37 still cut (`restore/none.json`), 119 left alone (mostly pipe labels).
+  `restore/write_restore.py` writes from the plans the reviewers saw and redraws every place to compare: all 74 matched.
+- **Files.** Before-copies in `superseded/2026-10-03 street-name seams (files before)` (a file copied there by the first
+  pass keeps that earlier state; `write_log.jsonl` and `restore/write_log.jsonl` list every change);
+  `labels/restore/rebuild.sh` rebuilt the merged file, outlines, backing and tiles in 40 min (old ones in
+  `superseded/2026-10-03 street-name restore (merged layers)`); master checked (PASS) and saved 18:10.
+- **Open.** Street names still cut: 81 from the second pass, 21 + 44 of the 100 cut on every sheet (reviewed still
+  cut; nothing found to put back), 16 of the 327; another 153 of the 327 had nothing to put back (many are pipe
+  labels). At far zoom the Darken blend shows Tile 359's tan page edge as an orange line through Tile 338's houses
+  north of Richardson St.
 
 ## 4b. Safety net and records (added 2026-09-30 on a second review)
 
