@@ -221,10 +221,16 @@ the reviewer to be Opus/High". Work in `_local/claude/bake/align/v3_rebuild/edge
   strips (merged layers)/`. 38 min in all (darken 11 min, tiles 27 min). `check_master` passes except the Cram/Ward
   Map duplicate.
 - **Result.** 6,341 m2 no longer drawn (`gapcheck.py`, at 1.2 m, merged file without insets). Where no other sheet
-  lies under a cut, the atlas has a gap and the basemap shows, as at every other gap between sheets (the white backing
-  is traced from the drawn area and keeps interior gaps open). 3,637 m2 of it is inside the atlas, nearly all the
-  widening of gaps that were already there; the one new gap of note is Rawson St. between 485 and 486 (953 m2, about
-  3 m wide, where no scan exists). Pictures: `page edge before-after 486.jpg`, `page edge before-after 92.jpg`.
+  lies under a cut, the atlas had a gap and the basemap showed, as at every other gap between sheets. 3,637 m2 of it is
+  inside the atlas, nearly all the widening of gaps that were already there; the one new gap of note was Rawson St.
+  between 485 and 486 (953 m2, about 3 m wide, where no scan exists). Pictures: `page edge before-after 486.jpg`,
+  `page edge before-after 92.jpg`.
+- **White inner gaps (Joel, 2026-10-03).** `trace_backing.py` now fills every gap enclosed by the atlas smaller than
+  1,000 m2 (352 gaps, 31,239 m2, Rawson St. among them), so they show white paper in the atlas tiles. Larger enclosed
+  areas Sanborn never drew (Oakland Cemetery 19.1 ha, rail yards, 28 in all) stay open and show the basemap; Joel
+  chose the cap after seeing them (`largest inner gaps.jpg`). The earlier trace is `trace_backing_v1.py`; backing and
+  tiles before are in `superseded/2026-10-03 white inner gaps (merged layers)/`. Tiles rebuilt in 25 min
+  (`edges/rebuild_white.sh`). The Sheets view still shows the basemap in every gap.
 
 ## 4b. Safety net and records (added 2026-09-30 on a second review)
 
