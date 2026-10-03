@@ -195,6 +195,36 @@ so it should be easy to restore them. Go tile by tile and do not miss any." Work
   2 h 14 min to rebuild (13 min after the floater cuts); the tiles 24 min. Master saved; `check_master` passes except
   the Cram/Ward Map duplicate.
 - **Seen, not changed:** Tile 486 draws its scanned page edge (a brown and black strip about 3 m wide) along Rawson St.
+  Cut in 4f.
+
+## 4f. Page-edge strips (2026-10-02)
+
+Joel approved trimming scanned page edges (tan or brown paper edge, curled paper, binding shadow, black scan border)
+before one final rebuild: "please trim and reprocess. Keep asking Opus/Low to do each step of the work, but promote
+the reviewer to be Opus/High". Work in `_local/claude/bake/align/v3_rebuild/edges/`.
+
+- **Finding strips** (`edge_scan.py`): on each sheet at about 0.2 m, off-palette colour (not white or the four fills)
+  and solid black touching the sheet's edge or the file border: 267 candidates on 115 sheets. `cut.py groups` joined
+  them into 163 groups (pieces along the same file side join across 60 m, because a brown edge near the orange fill
+  colour is detected in pieces).
+- **Two cuts per group** (`cut.py`): BAND, everything the sheet draws from its edge in to the depth of the junk
+  joined to the edge (99th percentile, plus 0.3 m); STRIP, only the junk-coloured pixels, grown 0.3 m. Cards show the
+  atlas as drawn now and after each cut, with a red outline of the cut (`cards/`; pre-cut copies in `cards_before/`).
+- **Review.** Opus Low decided all 163 (11 batches). Opus High re-decided every non-band call and every third band,
+  then, because it overturned 6 of 25 sampled bands, the other 40 bands too. The lead settled 28 disagreements by
+  reading the cards (`lead.json`), always toward the safer cut. Final (`decisions.json`): 53 band, 12 strip, 98 keep.
+  Most keeps are false hits (big sheet numbers, the digit 1) or curled paper that carries drawing.
+- **Cut** (`cut.py write`): the mask is switched off over the cut in every file of the sheet (full, full_jpeg, 20%,
+  inset), overviews by majority; 65 cuts on 49 sheets (`write_log.jsonl`). Files before the cut are in
+  `1911 SANBORN BAKED/superseded/2026-10-02 edge strips (files before)/`.
+- **Rebuild** (`edges/rebuild.sh`): merged file, outlines, backing and tiles; old ones in `superseded/2026-10-02 edge
+  strips (merged layers)/`. 38 min in all (darken 11 min, tiles 27 min). `check_master` passes except the Cram/Ward
+  Map duplicate.
+- **Result.** 6,341 m2 no longer drawn (`gapcheck.py`, at 1.2 m, merged file without insets). Where no other sheet
+  lies under a cut, the atlas has a gap and the basemap shows, as at every other gap between sheets (the white backing
+  is traced from the drawn area and keeps interior gaps open). 3,637 m2 of it is inside the atlas, nearly all the
+  widening of gaps that were already there; the one new gap of note is Rawson St. between 485 and 486 (953 m2, about
+  3 m wide, where no scan exists). Pictures: `page edge before-after 486.jpg`, `page edge before-after 92.jpg`.
 
 ## 4b. Safety net and records (added 2026-09-30 on a second review)
 
