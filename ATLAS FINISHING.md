@@ -230,7 +230,11 @@ the reviewer to be Opus/High". Work in `_local/claude/bake/align/v3_rebuild/edge
   areas Sanborn never drew (Oakland Cemetery 19.1 ha, rail yards, 28 in all) stay open and show the basemap; Joel
   chose the cap after seeing them (`largest inner gaps.jpg`). The earlier trace is `trace_backing_v1.py`; backing and
   tiles before are in `superseded/2026-10-03 white inner gaps (merged layers)/`. Tiles rebuilt in 25 min
-  (`edges/rebuild_white.sh`). The Sheets view still shows the basemap in every gap.
+  (`edges/rebuild_white.sh`).
+- **Sheets view backing (Joel, 2026-10-03).** The Sheets view had no white under the sheets, so every gap showed the
+  satellite, including places only an inset map draws (insets are off in that view; the hole patch counted them as
+  covered). The white backing layer is back as the last layer in `1911 ATLANTA SANBORNS`, in the "Sheets" theme only,
+  white fill, no outline; `check_master.py` now expects it (`check_master_v1.py` is the earlier check). Master saved.
 
 ## 4b. Safety net and records (added 2026-09-30 on a second review)
 
