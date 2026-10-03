@@ -236,6 +236,32 @@ the reviewer to be Opus/High". Work in `_local/claude/bake/align/v3_rebuild/edge
   covered). The white backing layer is back as the last layer in `1911 ATLANTA SANBORNS`, in the "Sheets" theme only,
   white fill, no outline; `check_master.py` now expects it (`check_master_v1.py` is the earlier check). Master saved.
 
+## 4g. Street names at seams (2026-10-03)
+
+Joel, on Tile 338 over 359 at Richardson St. (the atlas read "HARDSO SO"): "Street names must be unobscured and not
+'ghosted' ever." Two overlapping sheets each print the street name, usually metres apart; the top sheet's edge or its
+own waste cut slices through both, and the far-zoom Darken blend overlays them. Work in
+`_local/claude/bake/align/v3_rebuild/labels/` (`labels.py`, `merge.py`, `pictures.py`, `rebuild.sh`).
+
+- **Finding them** (`labels.py scan`, 11 min): on each sheet at 0.1 m, capital letters 1.8-7 m tall (house numbers are
+  about 1.5 m, street names 2.7 m on the 50 ft sheets) joined into words; a word is flagged when the atlas shows part of
+  it (some ink under a sheet above) or its letters touch its own cut edge with another sheet beyond. 11,860 words,
+  1,915 flagged, 1,440 places (`cases.json`).
+- **The fix** (approved on Richardson, `labels/Richardson before-after.jpg`): the sheet whose printed name is complete
+  wins. Around its letters no other sheet draws, other sheets' fragments of the same name go, and nothing else changes:
+  the owner's other print is not uncovered and the other sheets' house numbers and labels stay (the pilot's High
+  reviewer overturned 4 of 15 fixes for losing them before this was added). Masks only; nothing is switched on.
+- **Review.** 1,113 cards (the other 327 places have letters trimmed off the only sheet that prints them;
+  `restore_cases.json`). Pilot of 72 (779,124 tokens), then all: Opus Low on every card, Opus High re-judged 645
+  (every fix and none, a quarter of the keeps) and overturned 101, Opus High settled those; 173 agents, 15,473,729
+  tokens. Final: 201 fixed, 669 left alone (mostly pipe labels and sheet numbers), 243 street names still cut that no
+  sheet switch repairs cleanly (`none.json`).
+- **Files.** Files before are in `1911 SANBORN BAKED/superseded/2026-10-03 street-name seams (files before)/`;
+  `labels/rebuild.sh` rebuilt the merged file, outlines, backing and tiles in 89 min (old ones in `superseded/2026-10-03
+  street-name seams (merged layers)`); master checked (only the Cram/Ward duplicate) and saved.
+- **Open.** The 243 and the 327 need letters restored from the original scans. At far zoom the Darken blend shows
+  Tile 359's tan page edge as an orange line through Tile 338's houses north of Richardson St.
+
 ## 4b. Safety net and records (added 2026-09-30 on a second review)
 
 - **After any change to the master, run `_local/claude/bake/check_master.py` inside QGIS before saving.** It checks
