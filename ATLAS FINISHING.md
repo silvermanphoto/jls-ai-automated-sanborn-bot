@@ -165,6 +165,37 @@ keep neighbouring-sheet reference numbers too (closely cut, like the sheet's own
   merged far-zoom file, the sheet index and white backing outlines, and the atlas tiles (old ones in
   `superseded/2026-10-02 floater cuts (merged layers)/`).
 
+## 4e. Hole patching (2026-10-02)
+
+Joel: "Please patch all the 'holes' left behind like in 467. I see that the source itself does not have these holes,
+so it should be easy to restore them. Go tile by tile and do not miss any." Work in
+`_local/claude/bake/align/v3_rebuild/holes/`.
+
+- **Finding holes** (`find_holes.py`): areas no sheet draws that are enclosed by drawn sheets, on the merged file's
+  mask: 799. `score_holes.py` and `hole_cards.py` found 556 with scan pixels under some sheet's mask; the other 243
+  have no scan anywhere (gaps between sheets).
+- **Sources.** Never an inset file (it carries its whole parent page at the inset's placement), and never a parent
+  inside its own inset area (`inset_areas.py`): either would fill the hole with drawing from somewhere else.
+- **Review.** Cards of each hole now and filled. Opus Low decided all 556 (16 batches), Opus Medium re-decided a
+  targeted set (7 batches), the lead settled 24 disagreements and 2 unsure: 524 restore, 32 left open (gaps, or
+  fills that would bring back margin junk).
+- **Patch** (`patch.py`): in each source's full-resolution grid, the mask is switched on where the hole is, no sheet
+  draws now and the scan has pixels. 456 holes took pixels (44,877 m2); 63 were already drawn by inset layers (the
+  merged far-zoom file has no insets, so they looked like holes there) and 5 were filled by a neighbour's patch.
+- **Black at far zoom** (`fix_ovr.py`): a file's overviews and its 20% copy hold black where the sheet was masked
+  when they were made, so a restored area drew black at far zoom (hole 546, the strip along Rawson St. between 467,
+  485 and 486). Newly drawn cells that were black now carry the average of the full-resolution scan under them.
+  `dark_check.py` checks every patch for black cells and for scan edge brought back; its flagged patches were all
+  real drawing on the cards (`flags_1.jpg`, `flags_2.jpg`).
+- **Files.** Files before the patch are in `1911 SANBORN BAKED/superseded/2026-10-02 hole patch (files before)/`;
+  `rebuild.sh` rebuilt the merged file, outlines and tiles (old ones in `superseded/2026-10-02 hole patch (merged
+  layers)/`).
+- **Result.** After the rebuild, 275 m2 of the 524 approved holes is still open (`cover_check.py`, counting inset
+  layers): 148 m2 is the Rawson St. strip where no scan exists, the rest slivers under 20 m2. The merged file took
+  2 h 14 min to rebuild (13 min after the floater cuts); the tiles 24 min. Master saved; `check_master` passes except
+  the Cram/Ward Map duplicate.
+- **Seen, not changed:** Tile 486 draws its scanned page edge (a brown and black strip about 3 m wide) along Rawson St.
+
 ## 4b. Safety net and records (added 2026-09-30 on a second review)
 
 - **After any change to the master, run `_local/claude/bake/check_master.py` inside QGIS before saving.** It checks
