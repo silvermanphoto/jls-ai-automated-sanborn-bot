@@ -1,0 +1,20 @@
+%% Placement into the finished 1911 master (engine 1.31, November 2026)
+flowchart TD
+  A[Re-fitted sheet: finished raster + ledger + approved packet] --> B{Evidence from the similarity fit?<br/>review schema 4, ledger says similarity}
+  B -- no --> X1[Refuse: old three-point evidence]
+  B -- yes --> C{Baked file exists and its corners match<br/>the finished raster within a pixel?}
+  C -- yes --> D[Place the baked file]
+  C -- no --> E[Place the finished raster<br/>warn: color differs until baked]
+  D --> F[Generated QGIS code, plan embedded as data]
+  E --> F
+  F --> G{Open project has unsaved changes?}
+  G -- yes --> X2[Refuse, change nothing]
+  G -- no --> H{Sheet already has a layer in a quadrant folder?<br/>matched by layer name and tile number;<br/>INSET MAPS and helper layers ignored}
+  H -- yes --> I[Replace that layer's source in place]
+  H -- no --> J[Insert in printed-number order<br/>in the right quadrant folder]
+  I --> K[Verify style: brightness 0, contrast 0, gamma 1, no stretch]
+  J --> K
+  K --> L{Every check passed and the master file untouched?}
+  L -- no --> R[Roll back tree, sources and styles]
+  L -- yes --> M[Done. Never saves the master.]
+  F -. check-only .-> N[Run every check, report add or replace, change nothing]

@@ -210,5 +210,36 @@ class OSMIndexTests(unittest.TestCase):
         self.assertFalse(missing.exists())
 
 
+class OverpassDownloadTimeoutTests(unittest.TestCase):
+    def test_a_stalled_read_is_retried_and_metadata_is_written_with_the_cache(self):
+        import hashlib
+        import io
+        from unittest import mock
+        import sanborn_osm
+
+        class Response(io.BytesIO):
+            headers = {"Content-Type": "application/xml"}
+
+        calls = []
+
+        def fake_urlopen(request, timeout):
+            calls.append(timeout)
+            if len(calls) == 1:
+                raise TimeoutError("The read operation timed out")
+            return Response(SYNTHETIC_OSM.encode("utf-8"))
+
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "atlanta.osm"
+            with mock.patch.object(sanborn_osm, "urlopen", side_effect=fake_urlopen), \
+                    mock.patch.object(sanborn_osm.time, "sleep"), mock.patch("sys.stderr"):
+                result = sanborn_osm.acquire_overpass(output)
+            self.assertEqual(calls, [sanborn_osm.OVERPASS_TIMEOUT_SECONDS] * 2)
+            metadata = json.loads(output.with_suffix(".osm.metadata.json").read_text())
+            self.assertEqual(metadata["source_sha256"], hashlib.sha256(result.read_bytes()).hexdigest())
+            self.assertEqual(sanborn_osm.sha256(result), metadata["source_sha256"])
+            self.assertEqual(sorted(p.name for p in Path(temporary).iterdir()),
+                             ["atlanta.osm", "atlanta.osm.metadata.json"])
+
+
 if __name__ == "__main__":
     unittest.main()

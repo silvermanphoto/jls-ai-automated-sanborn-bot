@@ -2,7 +2,7 @@
 
 > Open findings from the 2026-09 code review: ~/.claude/overseer/reviews/2026-09/jls-ai-automated-sanborn-bot.md and ~/.claude/overseer/reviews/2026-09/sanborn-comparison.md. Mention them to Joel at the start of each session; delete this line once none are open.
 
-Use the local-first version 1.30 workflow. Read `AGENTS.md` for standing safety rules, `LOCAL BATCH ENGINE.md` for commands, and `AI AUTOMATED SANBORN BOT - MASTER INSTRUCTIONS.md` for the full evidence policy. Keep explanations in plain English, lead with the result, and make only the change asked for.
+Use the local-first version 1.31 workflow. Read `AGENTS.md` for standing safety rules, `LOCAL BATCH ENGINE.md` for commands, and `AI AUTOMATED SANBORN BOT - MASTER INSTRUCTIONS.md` for the full evidence policy. Keep explanations in plain English, lead with the result, and make only the change asked for.
 
 ## Sheet fitting — hard rule
 
@@ -24,11 +24,13 @@ HARD RULE (Joel, 2026-09-28): every Sanborn sheet is fitted with rotation + unif
 
 Joel explicitly confirmed on 2026-09-25 that this engine should remain public for historians and academics. Audit staged changes for credentials and sensitive data before publishing. QGIS project backups and the working `batch/` and `1911 SANBORN DOWNLOADS/` trees are local-only; map imports must never commit or push them. Preserve local files when untracking them, and never rewrite public history without explicit approval. This project exception supersedes the older private-only default.
 
+Private records (2026-11-10): the working records and finishing scripts this public repository ignores (`batch/` queue database, approvals and review packets, pins and notes, every sheet's `.points`, QGIS master backups, and all of `_local/claude/`) are backed up in the private repository `silvermanphoto/jls-sanborn-atlas-records`, which shares this folder through its own git directory `_local/records.git`. After changing any of them run `zsh _local/records-sync.sh "what changed"`. Scans, tiles, previews, OCR output, logs and session transcripts stay out of it.
+
 ## Operating boundary
 
 - Joel's Mac performs downloads, OCR, street matching, local OSM and Kauffman rendering, rotate-scale-shift warping, checksums, and audits. ChatGPT or Joel reviews street identity, three source centers, non-control alignment, and the final contact sheet.
 - Never overwrite a source scan. Saving `/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book/JLS Master Map File with 1911 Sanborns.qgz` is allowed under Joel's standing permission (QGIS's startup script keeps a dated copy of every save); run `_local/claude/bake/check_master.py` inside QGIS before saving after any layer change. Never close QGIS with unsaved work.
-- Run `python3 tools/sanborn_batch.py doctor` before production. `gdal_edit.py` is required because it embeds derivation evidence inside each finished GeoTIFF.
+- Run `/usr/local/bin/python3.12 tools/sanborn_batch.py doctor` (the python.org 3.12 the app also uses; plain `python3` on this Mac is Homebrew's and records a different version in every packet) before production. `gdal_edit.py` is required because it embeds derivation evidence inside each finished GeoTIFF.
 - The normal parallel setting is three jobs. `sanborn_parallel.py` uses one shared pacer to keep actual worker launches at least two seconds apart by default; each one-tile child receives zero internal delay.
 
 ## Index-seed decisions
@@ -67,7 +69,7 @@ Reviewer and note are mandatory. `--replace-existing` deliberately supersedes an
 - Every completed raster uses opacity 1.0, Brightness 0, Gamma 1.0, Contrast 0 (no channel stretch), and alpha band 4; since 2026-09-29 Joel's colour work is baked into the files, not applied as layer styling. Generated QGIS code must perform duplicate preflight and rollback and must contain no project-save call.
 - Earlier live Tile 236 evidence used an equivalent hash-bound plan, not a live schema-3 manifest. The present schema-3 revision was exercised in the installed QGIS 3.42.1 runtime with the real index and synthetic tiles; the unavailable QGIS MCP connection prevented a current run against Joel's open protected project. Keep those claims separate.
 
-Version 1.30 passes all 234 engine tests under the python.org Python 3.12 (`/usr/local/bin/python3.12 -m unittest discover -s tests`) with QGIS's GDAL appended to PATH, including real warping, embedded-provenance resume checks and a real read of a paper recipe through QGIS's GDAL. When using QGIS GDAL, set PROJ_LIB and PROJ_DATA to its Contents/Resources/proj folder and GDAL_DATA to Contents/Resources/gdal.
+Version 1.31 passes all 257 engine tests under the python.org Python 3.12 (`/usr/local/bin/python3.12 -m unittest discover -s tests`) with QGIS's GDAL appended to PATH, including real warping, embedded-provenance resume checks and a real read of a paper recipe through QGIS's GDAL. When using QGIS GDAL, set PROJ_LIB and PROJ_DATA to its Contents/Resources/proj folder and GDAL_DATA to Contents/Resources/gdal.
 
 
 2026-09-25 review integrity (1.18): Completed rasters validate against their frozen evidence, preserving their original renderer and software provenance. New approvals and warps still require current inputs and software. Archive validation may preserve withdrawn results but must never authorize their import. Sheets 486, 487, 493 and 494 require a fresh original-1958-topo packet with at least three independent checks before approval, finishing or import. Reopening retires active queue links while retaining historical evidence; failed archives restore originals and remove partial copies only after verified recovery.
@@ -166,3 +168,12 @@ Full account, rationale and commands: `ATLAS FINISHING.md`. The rules that must 
 - The white backing fills gaps enclosed by the atlas under 1,000 m2 (Joel, 2026-10-03); larger unmapped areas (Oakland Cemetery, rail yards) stay open and show the basemap. Set by `FILL_M2` in `_local/claude/bake/trace_backing.py`. The same backing layer sits under the sheets in the Sheets view (theme "Sheets" only); gaps in a view are judged with insets off there.
 - A hole whose rim labels all name one sheet means that sheet is misplaced (Tile 353, 2026-09-30). Rough seeds ("mean of neighbours") need checking.
 - Restart QGIS after changing the paper module; reloading it in place crashes QGIS. QGIS opens on downtown Atlanta via its `startup.py`.
+
+## Version 1.31 — November 2026 review (on branch `claude/sanborn-review-2026-11` until Joel merges it)
+
+- Placement into the finished master: the importer finds a sheet's layer by name and tile number inside the quadrant folders whatever file it draws from, replaces that layer's source in place (reported as a replace) or inserts a new sheet in number order, ignores INSET MAPS and the helper layers, and no longer needs the `.clean.vrt` recipe. It places the baked `full_jpeg` file when its corners match the finished raster within a pixel, otherwise the finished raster with a warning that its color differs until baked. `sanborn_qgis.py ... --check-only` runs every check against the open project and changes nothing. Not yet run against live QGIS: do a `--check-only` pass on the first re-fitted sheet before a real placement, and run `check_master.py` after. Open points from the build: a brand-new sheet is named "Sanborn 1911 - tile N" (lower-case t), which `check_master.py` does not count; `finish` still writes the old recipe file; whether QGIS reports a baked JPEG with a mask as four bands with band 4 as alpha is unverified.
+- Placement refuses evidence from the old three-point fit (review schema below 4 or a ledger without the similarity fit).
+- The "accept distortion" option is gone from every command; a fit that fails the pass test is refused. Stored keys remain so old packets verify.
+- Joel's precision override for tiles 77, 174 and 178 is recorded in `sanborn_placement_policy.py` and waives only the 15 m test.
+- `approve` requires `--approved-by`. A Library of Congress human check or rate limit stops the run (exit 75) without failing the remaining sheets. A download with no reported length must end with the JPEG 2000 end marker. `finish` refuses a raster with no ledger unless `--set-aside-unledgered-raster` is given. The wrong-neighborhood check runs when a packet is built. Rebuilding the tile-location index keeps the previous seed file and leaves an unchanged one untouched. A second master backup on one day keeps the first. Contact sheets use Futura, then Gill Sans.
+- Removed: the dead three-point helpers and the one-time `migrate-to-recipes` command. Editing `sanborn_review.py` changed the code hash locked into review packets, so any open, unfinished packet must be rebuilt; finished results are unaffected.

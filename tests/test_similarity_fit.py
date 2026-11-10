@@ -143,5 +143,71 @@ class SimilarityFitTests(unittest.TestCase):
             fit_diagnostics(controls([(0, 0, 0, 0), (100, 0, 5, 0)]))
 
 
+class PrecisionOverrideTests(unittest.TestCase):
+    """Joel's override (2026-09-30) waives the 15 m limit for 77, 174 and 178 only."""
+
+    def _forty_metre_fit(self):
+        rows = [
+            (0, 0, ATLANTA_X, ATLANTA_Y),
+            (800, 0, ATLANTA_X + 48, ATLANTA_Y),
+            (0, 800, ATLANTA_X, ATLANTA_Y - 48),
+            (800, 800, ATLANTA_X + 48 + 68, ATLANTA_Y - 48),
+        ]
+        diagnostics = fit_diagnostics(controls(rows), 1000, 1000)
+        self.assertGreater(diagnostics["leave_one_out_rms_ground_metres"], 38.0)
+        return diagnostics
+
+    def test_tile_77_passes_a_forty_metre_error_and_tile_78_does_not(self):
+        from sanborn_georeference import fit_safety_limits
+        from sanborn_placement_policy import precision_override
+
+        diagnostics = self._forty_metre_fit()
+        override = precision_override(77)
+        self.assertEqual(fit_safety_warnings(diagnostics, precision_override=override), [])
+        self.assertEqual(fit_safety_limits(precision_override=override)["precision_override"]["tile"], 77)
+        for tile in (174, 178):
+            self.assertIsNotNone(precision_override(tile))
+        self.assertIsNone(precision_override(78))
+        warnings = fit_safety_warnings(diagnostics, precision_override=precision_override(78))
+        self.assertTrue(any("leave-one-out" in warning for warning in warnings))
+        self.assertNotIn("precision_override", fit_safety_limits())
+
+    def test_override_keeps_the_scale_gate(self):
+        from sanborn_placement_policy import precision_override
+
+        rows = [(0, 0, ATLANTA_X, ATLANTA_Y), (800, 0, ATLANTA_X + 800, ATLANTA_Y),
+                (0, 800, ATLANTA_X, ATLANTA_Y - 800)]
+        warnings = fit_safety_warnings(
+            fit_diagnostics(controls(rows), 1000, 1000), precision_override=precision_override(77)
+        )
+        self.assertTrue(any("plausible" in warning for warning in warnings))
+
+
+class StalePartialTests(unittest.TestCase):
+    def test_only_partials_from_finished_processes_are_swept(self):
+        import os
+        import subprocess
+        import tempfile
+
+        from sanborn_georeference import sweep_stale_partials
+
+        dead = subprocess.run([sys.executable, "-c", "import os; print(os.getpid())"],
+                              capture_output=True, text=True, check=True)
+        dead_pid = int(dead.stdout)
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / "Sanborn 1911 -- Tile 154_georeferenced.tif"
+            ledger = output.with_suffix(".georef.json")
+            stale = output.with_name(f".{output.stem}.partial-{dead_pid}.tif")
+            stale_ledger = ledger.with_name(f".{ledger.name}.partial-{dead_pid}")
+            live = output.with_name(f".{output.stem}.partial-{os.getppid()}.tif")
+            other = output.with_name(".Sanborn 1911 -- Tile 155_georeferenced.partial-1.tif")
+            for path in (stale, stale_ledger, live, other):
+                path.write_bytes(b"partial")
+            removed = sweep_stale_partials(output, ledger)
+            self.assertEqual(sorted(removed), sorted([stale, stale_ledger]))
+            self.assertTrue(live.exists())
+            self.assertTrue(other.exists())
+
+
 if __name__ == "__main__":
     unittest.main()

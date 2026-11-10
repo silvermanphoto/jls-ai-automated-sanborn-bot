@@ -153,5 +153,29 @@ class SpatialOcrTests(unittest.TestCase):
         )
 
 
+class LocalProgramTimeoutTests(unittest.TestCase):
+    def test_a_timed_out_program_is_tried_once_more_then_stops_plainly(self):
+        import subprocess
+        from unittest import mock
+        import sanborn_ocr
+
+        outcomes = [subprocess.TimeoutExpired("tesseract", 300), "done"]
+
+        def fake_run(command, **kwargs):
+            self.assertEqual(kwargs["timeout"], 300)
+            outcome = outcomes.pop(0)
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
+
+        with mock.patch.object(sanborn_ocr.subprocess, "run", side_effect=fake_run), mock.patch("sys.stderr"):
+            self.assertEqual(sanborn_ocr._run_with_timeout(["/usr/bin/tesseract"], 300), "done")
+        always = subprocess.TimeoutExpired("tesseract", 300)
+        with mock.patch.object(sanborn_ocr.subprocess, "run", side_effect=always) as run, \
+                mock.patch("sys.stderr"), self.assertRaisesRegex(RuntimeError, "over 300 seconds twice"):
+            sanborn_ocr._run_with_timeout(["/usr/bin/tesseract"], 300)
+        self.assertEqual(run.call_count, 2)
+
+
 if __name__ == "__main__":
     unittest.main()

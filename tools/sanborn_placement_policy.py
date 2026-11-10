@@ -10,6 +10,30 @@ from sanborn_georeference import MAX_LEAVE_ONE_OUT_RMS_METRES, MIN_FIT_POINTS
 SUPERSEDED_TILES = frozenset({486, 487, 493, 494})
 REQUIRED_REFERENCE = "washington-rawson-topo-1958"
 
+# Joel's precision-requirement override (engine CLAUDE.md, "Hard sheets - Joel,
+# 2026-09-30"): these very hard sheets may sit tens of meters off at street level
+# and are exempt from the 15 m leave-one-out pass test. The similarity fit, the
+# three-point minimum and the scale gate still hold. Any other sheet needs
+# Joel's own override, added here with his words and the date.
+PRECISION_OVERRIDE_TILES = frozenset({77, 174, 178})
+PRECISION_OVERRIDE_DATE = "2026-09-30"
+PRECISION_OVERRIDE_QUOTE = (
+    "this level of imprecision is acceptable for these very difficult to place tiles"
+)
+
+
+def precision_override(tile: object) -> dict | None:
+    """The record bound into a packet and ledger when Joel's override applies."""
+    if isinstance(tile, bool) or not isinstance(tile, int) or tile not in PRECISION_OVERRIDE_TILES:
+        return None
+    return {
+        "tile": tile,
+        "waives": "leave-one-out limit",
+        "approved_by": "Joel Silverman",
+        "date": PRECISION_OVERRIDE_DATE,
+        "quote": PRECISION_OVERRIDE_QUOTE,
+    }
+
 
 def require_current_placement_evidence(tile: int, review: dict) -> None:
     """Call only after validating the packet lock and every evidence file hash.

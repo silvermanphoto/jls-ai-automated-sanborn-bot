@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 from contextlib import closing, contextmanager
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 import fcntl
 from functools import wraps
 import hashlib
@@ -31,17 +32,19 @@ from PIL import Image
 import sanborn_paper
 from sanborn_review import require_approval, validate_control_labels
 from sanborn_qgis import load_manifest as validate_qgis_manifest
-from sanborn_placement_policy import require_current_placement_evidence
+from sanborn_collections import STANDARD_STYLE
+from sanborn_placement_policy import precision_override, require_current_placement_evidence
 from sanborn_georeference import (
     AFFINE_METADATA_KEY,
+    MAX_TARGET_SEED_DISTANCE,
     PIPELINE_METADATA_KEY,
     PIPELINE_METADATA_VALUE,
     POINTS_METADATA_KEY,
     SOURCE_METADATA_KEY,
     FIT_MODEL,
     SIMILARITY_TRANSFORMATION_TYPE,
-    affine_provenance_signature,
     fit_diagnostics,
+    fit_provenance_signature,
     fit_safety_limits,
     fit_safety_warnings,
     read_points,
@@ -77,7 +80,6 @@ PROTECTED_PROJECT = PROJECT_ROOT.parent / "JLS Master Map File with 1911 Sanborn
 FORMER_PROTECTED_PROJECTS = (PROJECT_ROOT.parent / "JLS Master Map File.qgz",)
 USER_AGENT = "Joel-Silverman-Sanborn-Bot/1.0 (single-sheet historical map research)"
 DATABASE_SCHEMA_VERSION = 4
-MAX_TARGET_SEED_DISTANCE = 250.0
 VOLUMES = {
     1: "sanborn01378_006",
     2: "sanborn01378_007",
@@ -538,8 +540,24 @@ def _restore_exact_interrupted_archive(
     return True
 
 
-def _archive_verified_result(row: sqlite3.Row) -> list[str]:
-    """Create an immutable, relocation-aware bundle before reusing a fixed name."""
+def _mark_retirement_complete(state_path: Path) -> None:
+    """Close a retirement once the queue no longer marks the tile verified."""
+    record = json.loads(state_path.read_text(encoding="utf-8"))
+    if record.get("state") != "retiring":
+        return
+    record["state"] = "retired"
+    record["retired_utc"] = utc_now()
+    _write_json_atomic(state_path, record)
+
+
+def _archive_verified_result(row: sqlite3.Row, *, finalize: bool = True) -> list[str]:
+    """Create an immutable, relocation-aware bundle before reusing a fixed name.
+
+    With finalize=False the retirement record stays "retiring" after the
+    originals are removed, and the caller marks it retired only after its queue
+    change is committed. A stop in between then leaves a record the next reopen
+    can restore from, instead of a verified row whose files are gone.
+    """
     tile = int(row["tile"])
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     archive_root = BATCH_DIR / "archive" / f"tile-{tile:04d}"
@@ -697,9 +715,8 @@ def _archive_verified_result(row: sqlite3.Row) -> list[str]:
                 fail(f"Original changed during archive creation: {path}")
         for path, _ in copied:
             path.unlink()
-        retirement_record["state"] = "retired"
-        retirement_record["retired_utc"] = utc_now()
-        _write_json_atomic(retirement_state, retirement_record)
+        if finalize:
+            _mark_retirement_complete(retirement_state)
     except Exception:
         # Keep the recovery record if restoration itself fails. Otherwise this
         # attempt is fully rolled back and its partial copies serve no purpose.
@@ -713,7 +730,11 @@ def _archive_verified_result(row: sqlite3.Row) -> list[str]:
         if archive_root.is_dir() and not any(archive_root.iterdir()):
             archive_root.rmdir()
         raise
-    return [str(archive / "archive-index.json"), str(bundle / manifest.name)]
+    return [
+        str(archive / "archive-index.json"),
+        str(bundle / manifest.name),
+        str(retirement_state),
+    ]
 
 
 def reopen_tile(
@@ -721,8 +742,12 @@ def reopen_tile(
     tile: int,
     destination: str,
     note: str,
-) -> None:
-    """Explicitly release a stopped item after somebody has inspected it."""
+) -> list[Path]:
+    """Explicitly release a stopped item after somebody has inspected it.
+
+    Returns retirement records to close with _mark_retirement_complete once the
+    caller has committed this change.
+    """
     row = db.execute("SELECT * FROM tiles WHERE tile=?", (tile,)).fetchone()
     if not row:
         fail(f"Tile {tile} is not in the queue.")
@@ -753,8 +778,12 @@ def reopen_tile(
         if not Path(str(row["spatial_ocr_path"])).is_file():
             fail(f"Tile {tile}'s spatial OCR record no longer exists. Reopen it to queued.")
     archived: list[str] = []
+    pending: list[Path] = []
     if current == "verified" and destination in {"queued", "review-ready"}:
-        archived = _archive_verified_result(row)
+        result = _archive_verified_result(row, finalize=False)
+        if result:
+            archived = result[:-1]
+            pending.append(Path(result[-1]))
     update_tile(
         db,
         tile,
@@ -786,6 +815,7 @@ def reopen_tile(
     event(db, tile, "reopened", f"{current} -> {destination}: {note}")
     if archived:
         event(db, tile, "prior-result-archived", json.dumps(archived, sort_keys=True))
+    return pending
 
 
 def parse_tiles(values: list[str]) -> list[int]:
@@ -808,6 +838,32 @@ def parse_tiles(values: list[str]) -> list[int]:
     return sorted(tiles)
 
 
+# Exit status when the Library of Congress asks for a person or keeps refusing
+# requests (EX_TEMPFAIL). The run stops; the sheets it had not reached stay queued.
+LOC_PAUSE_EXIT = 75
+MAX_RETRY_AFTER_SECONDS = 300
+
+
+class LocPause(RuntimeError):
+    """The Library of Congress asked for a person or kept refusing; stop the whole run."""
+
+
+def _retry_after_seconds(error: HTTPError) -> float | None:
+    value = error.headers.get("Retry-After") if error.headers else None
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        try:
+            when = parsedate_to_datetime(value)
+        except (TypeError, ValueError):
+            return None
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        return max(0.0, (when - datetime.now(timezone.utc)).total_seconds())
+
+
 def request(url: str, *, method: str = "GET", headers: dict[str, str] | None = None):
     merged = {"User-Agent": USER_AGENT, "Accept": "application/json,*/*"}
     merged.update(headers or {})
@@ -820,20 +876,49 @@ def request(url: str, *, method: str = "GET", headers: dict[str, str] | None = N
                 sample = response.read(4096).decode("utf-8", "ignore").lower()
                 response.close()
                 if "prove you are human" in sample or "captcha" in sample:
-                    fail("Library of Congress requested human verification. Pause for Joel.")
+                    raise LocPause(
+                        "The Library of Congress asked for a human check. The run has "
+                        "stopped; the remaining sheets are still queued."
+                    )
                 fail(f"Expected data but received an HTML page from {url}")
             return response
         except HTTPError as error:
             last_error = error
+            if error.code == 403:
+                raise LocPause(
+                    "The Library of Congress refused the request (403). The run has "
+                    "stopped; the remaining sheets are still queued."
+                ) from error
             if error.code not in {429, 500, 502, 503, 504, 520, 522, 524}:
                 raise
         except URLError as error:
             last_error = error
         if attempt < 3:
-            wait = 3 * (2 ** attempt)
-            print(f"LOC request paused {wait}s after a temporary error...", file=sys.stderr)
+            wait: float = 3 * (2 ** attempt)
+            if isinstance(last_error, HTTPError) and last_error.code == 429:
+                asked = _retry_after_seconds(last_error)
+                if asked is not None:
+                    if asked > MAX_RETRY_AFTER_SECONDS:
+                        break
+                    wait = max(wait, asked)
+            print(f"LOC request paused {wait:g}s after a temporary error...", file=sys.stderr)
             time.sleep(wait)
+    if isinstance(last_error, HTTPError) and last_error.code == 429:
+        raise LocPause(
+            "The Library of Congress kept limiting requests (429). The run has stopped; "
+            "the remaining sheets are still queued."
+        ) from last_error
     raise last_error
+
+
+def _pause_for_loc(db: sqlite3.Connection, tile: int, error: LocPause) -> None:
+    """Return the sheet being fetched to the queue; nothing is marked failed."""
+    row = db.execute("SELECT status FROM tiles WHERE tile=?", (tile,)).fetchone()
+    if row and row["status"] == "downloading":
+        update_tile(db, tile, status="queued", error=None, failure_stage=None)
+    event(db, tile, "paused-for-loc", str(error))
+    db.commit()
+    print(f"Tile {tile}: PAUSED. {error}", file=sys.stderr)
 
 
 def all_strings(value: object):
@@ -925,9 +1010,38 @@ def quarantine(path: Path, reason: str) -> Path:
     return quarantined
 
 
+JPEG2000_END_OF_CODESTREAM = b"\xff\xd9"
+
+
+def _ends_with_codestream_marker(path: Path) -> bool:
+    """A JPEG 2000 scan cut short loses its closing end-of-codestream marker."""
+    size = path.stat().st_size
+    if size < 2:
+        return False
+    with path.open("rb") as handle:
+        handle.seek(size - 2)
+        return handle.read(2) == JPEG2000_END_OF_CODESTREAM
+
+
+def _response_total_bytes(response, start: int) -> int | None:
+    """The full file length a GET response reports, if any."""
+    content_range = response.headers.get("Content-Range") or ""
+    match = re.fullmatch(r"bytes\s+\d+-\d+/(\d+)", content_range.strip())
+    if match:
+        return int(match.group(1))
+    length = response.headers.get("Content-Length")
+    if length and length.isdigit():
+        return int(length) + (start if response.status == 206 else 0)
+    return None
+
+
 def download(url: str, destination: Path, expected_bytes: int | None = None) -> None:
     if destination.exists():
-        if expected_bytes is None or destination.stat().st_size == expected_bytes:
+        if expected_bytes is None:
+            if _ends_with_codestream_marker(destination):
+                return
+            quarantine(destination, "the scan does not end with its JPEG 2000 end marker")
+        elif destination.stat().st_size == expected_bytes:
             return
         quarantine(
             destination,
@@ -951,6 +1065,8 @@ def download(url: str, destination: Path, expected_bytes: int | None = None) -> 
         if start and response.status != 206:
             partial.unlink()
             start = 0
+        if expected_bytes is None:
+            expected_bytes = _response_total_bytes(response, start)
         mode = "ab" if start else "wb"
         with partial.open(mode) as handle:
             while True:
@@ -958,6 +1074,13 @@ def download(url: str, destination: Path, expected_bytes: int | None = None) -> 
                 if not block:
                     break
                 handle.write(block)
+    if expected_bytes is None and not _ends_with_codestream_marker(partial):
+        # No length was reported anywhere, and a cut connection ends the read
+        # quietly. Keep the bytes for resuming, but never accept them as the scan.
+        fail(
+            "The Library of Congress reported no file length and the download does not "
+            "end with the JPEG 2000 end marker, so it may be cut short. It was not accepted."
+        )
     partial.replace(destination)
     if expected_bytes is not None and destination.stat().st_size != expected_bytes:
         actual = destination.stat().st_size
@@ -1942,6 +2065,9 @@ def cmd_prepare(args: argparse.Namespace) -> int:
                 continue
             try:
                 prepare_one(db, tile)
+            except LocPause as error:
+                _pause_for_loc(db, tile, error)
+                return LOC_PAUSE_EXIT
             except Exception as error:
                 _mark_failed(db, tile, "prepare", error)
                 db.commit()
@@ -2270,6 +2396,9 @@ def cmd_work(args: argparse.Namespace) -> int:
                     "verified",
                 }:
                     print(f"Tile {tile}: status {row['status']} requires an explicit reopen.")
+            except LocPause as error:
+                _pause_for_loc(db, tile, error)
+                return LOC_PAUSE_EXIT
             except Exception as error:
                 _mark_failed(db, tile, stage, error)
                 db.commit()
@@ -2413,8 +2542,10 @@ def cmd_reopen(args: argparse.Namespace) -> int:
     if not note:
         fail("Explain what was inspected or changed before reopening this tile.")
     with connect(args.database) as db:
-        reopen_tile(db, args.tile, args.to, note)
+        pending = reopen_tile(db, args.tile, args.to, note)
         db.commit()
+    for state_path in pending:
+        _mark_retirement_complete(state_path)
     print(f"Tile {args.tile}: reopened to {args.to}.")
     return 0
 
@@ -2563,10 +2694,6 @@ def cmd_packet(args: argparse.Namespace) -> int:
             if sha256(immutable_evidence) != sha256(historical_evidence):
                 fail("The historical street evidence copy did not verify.")
             command.extend(["--historical-evidence", str(immutable_evidence)])
-        if args.allow_distortion:
-            command.extend(
-                ["--allow-distortion", "--distortion-note", args.distortion_note]
-            )
         for label in labels:
             command.extend(["--control-label", label])
         try:
@@ -2608,10 +2735,6 @@ def cmd_approve(args: argparse.Namespace) -> int:
                 args.approved_by,
                 "--note",
                 args.note,
-                "--reference-method",
-                args.reference_method,
-                "--verification-note",
-                args.verification_note,
             ],
             check=True,
         )
@@ -2779,7 +2902,10 @@ def _verify_final_pair(
         seed_x + distance,
         seed_y + distance,
     ]
-    expected_limits = fit_safety_limits("EPSG:3857", expected_bbox, [seed_x, seed_y], distance)
+    override = precision_override(int(row["tile"]))
+    expected_limits = fit_safety_limits(
+        "EPSG:3857", expected_bbox, [seed_x, seed_y], distance, precision_override=override
+    )
     transformation = record.get("transformation", {})
     if str(transformation.get("target_crs", "")).upper() != "EPSG:3857":
         fail("The final output is not in required EPSG:3857.")
@@ -2807,7 +2933,7 @@ def _verify_final_pair(
     )
     diagnostics["target_location_check"] = location
     require_target_location(location)
-    warnings = fit_safety_warnings(diagnostics)
+    warnings = fit_safety_warnings(diagnostics, precision_override=override)
     if warnings:
         fail("Final sheet fit test failed: " + "; ".join(warnings))
     if transformation.get("distortion_override") is not False:
@@ -2816,14 +2942,14 @@ def _verify_final_pair(
         fail("The final ledger's fit warnings differ from the live controls.")
     if not _same_structured_value(transformation.get("diagnostics"), diagnostics):
         fail("The final ledger's fit diagnostics differ from the live controls.")
-    affine_signature = affine_provenance_signature(
+    fit_signature = fit_provenance_signature(
         source_digest,
         points_digest,
         target_crs,
         diagnostics,
         expected_limits,
     )
-    if transformation.get("affine_provenance_signature") != affine_signature:
+    if transformation.get("affine_provenance_signature") != fit_signature:
         fail("The final ledger is not bound to the recomputed sheet fit.")
 
     output_record = record.get("output", {})
@@ -2882,7 +3008,7 @@ def _verify_final_pair(
     expected_embedded = {
         SOURCE_METADATA_KEY: source_digest,
         POINTS_METADATA_KEY: points_digest,
-        AFFINE_METADATA_KEY: affine_signature,
+        AFFINE_METADATA_KEY: fit_signature,
         PIPELINE_METADATA_KEY: PIPELINE_METADATA_VALUE,
     }
     if any(embedded.get(key) != value for key, value in expected_embedded.items()):
@@ -2936,17 +3062,17 @@ def _verify_final_pair(
     return record
 
 
-def _preserve_incomplete_pair(output: Path, ledger: Path) -> None:
+def _preserve_incomplete_pair(output: Path, ledger: Path, *, label: str = "incomplete") -> None:
     """Move an interrupted one-file publish aside without deleting evidence."""
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     for path in (output, ledger):
         if not path.exists():
             continue
-        preserved = path.with_name(f"{path.stem}.incomplete-{stamp}{path.suffix}")
+        preserved = path.with_name(f"{path.stem}.{label}-{stamp}{path.suffix}")
         counter = 1
         while preserved.exists():
             preserved = path.with_name(
-                f"{path.stem}.incomplete-{stamp}-{counter}{path.suffix}"
+                f"{path.stem}.{label}-{stamp}-{counter}{path.suffix}"
             )
             counter += 1
         path.replace(preserved)
@@ -3012,10 +3138,6 @@ def cmd_finish(args: argparse.Namespace) -> int:
                 "The approved review packet is not bound to the current independent "
                 "index-map seed. Rebuild and approve the packet."
             )
-        allow_distortion = review_limits.get("allow_distortion") is True
-        distortion_note = str(review_limits.get("distortion_note", "")).strip()
-        if allow_distortion or distortion_note:
-            fail("A rotate-scale-shift fit has no distortion to accept; rebuild the packet.")
         quality_note = args.quality_note or (
             f"{approval['geographic_verification']['reference_method']}: "
             f"{approval['geographic_verification']['note']}"
@@ -3033,11 +3155,26 @@ def cmd_finish(args: argparse.Namespace) -> int:
             str(PROTECTED_PROJECT),
             "--quality-note",
             quality_note,
+            "--tile",
+            str(args.tile),
         ]
         command.extend(_target_seed_command_args(row))
         for control in review["points"]["controls"]:
             command.extend(["--control-label", control.get("label", "Control")])
-        if output.exists() != ledger.exists():
+        if output.exists() and not ledger.exists():
+            # This engine publishes the ledger before the raster, so a raster with
+            # no ledger was not left by its own interrupted run. It may be a
+            # hand-made result (sheets 196, 236 and 474 have them): never rename
+            # it unless asked to.
+            if not getattr(args, "set_aside_unledgered_raster", False):
+                fail(
+                    f"{output.name} already exists with no verification ledger beside it, "
+                    "so this engine did not make it; it may be a hand-made map. Nothing was "
+                    "renamed. Move it yourself, or run finish again with "
+                    "--set-aside-unledgered-raster to rename it aside."
+                )
+            _preserve_incomplete_pair(output, ledger, label="set-aside")
+        elif ledger.exists() and not output.exists():
             _preserve_incomplete_pair(output, ledger)
         if output.exists() and ledger.exists() and _ledger_predates_approval(ledger, points, source):
             # An earlier finished map for this sheet was made from controls the
@@ -3052,8 +3189,6 @@ def cmd_finish(args: argparse.Namespace) -> int:
         else:
             subprocess.run(command, check=True)
             final_record = _verify_final_pair(row, output, ledger, approved_review=review)
-        if final_record["transformation"].get("distortion_override") is not False:
-            fail("The final warp claims a distortion exception; a similarity fit has none.")
         # QGIS shows the sheet through its paper recipe file (paper whitened at
         # draw time); the finished TIFF itself is never rewritten.
         try:
@@ -3097,10 +3232,10 @@ def cmd_finish(args: argparse.Namespace) -> int:
                     "approval_sha256": sha256(review_dir / "approval.json"),
                     "group": "1911 ATLANTA SANBORNS",
                     "sort_key": args.tile,
-                    "brightness": 0,
-                    "gamma": 1.0,
-                    "contrast": 0,
-                    "opacity": 1.0,
+                    "brightness": STANDARD_STYLE["brightness"],
+                    "gamma": STANDARD_STYLE["gamma"],
+                    "contrast": STANDARD_STYLE["contrast"],
+                    "opacity": STANDARD_STYLE["opacity"],
                     "expanded": False,
                     "save_project": False,
                     "review_token": review["approval_token"],
@@ -3242,7 +3377,7 @@ def parse_args() -> argparse.Namespace:
     coordinates.add_argument("--map-coordinate", nargs=2, type=float, metavar=("X", "Y"))
     confirm_seed.add_argument("--reviewer", required=True)
     confirm_seed.add_argument("--note", required=True)
-    confirm_seed.add_argument("--tolerance", type=float, default=250.0)
+    confirm_seed.add_argument("--tolerance", type=float, default=MAX_TARGET_SEED_DISTANCE)
     confirm_seed.add_argument("--replace-existing", action="store_true")
     confirm_seed.add_argument("--override-high-confidence", action="store_true")
     confirm_seed.set_defaults(function=cmd_confirm_seed)
@@ -3281,42 +3416,24 @@ def parse_args() -> argparse.Namespace:
     packet.add_argument("--historical-evidence", type=Path)
     packet.add_argument("--index-json", type=Path, default=DEFAULT_INDEX_JSON)
     packet.add_argument("--control-label", action="append", default=[])
-    packet.add_argument(
-        "--allow-distortion",
-        action="store_true",
-        help="Retired: a rotate-scale-shift fit has no distortion to accept",
-    )
-    packet.add_argument(
-        "--distortion-note",
-        default="",
-        help="Required evidence note when --allow-distortion is used",
-    )
     packet.set_defaults(function=cmd_packet)
     approve = sub.add_parser("approve", help="Approve the exact review-packet hash")
     approve.add_argument("tile", type=int)
-    approve.add_argument("--approved-by", default="Joel or ChatGPT")
+    approve.add_argument(
+        "--approved-by",
+        required=True,
+        help="Name of the person or assistant approving, recorded in the approval",
+    )
     approve.add_argument("--note", default="")
-    approve.add_argument(
-        "--reference-method",
-        default="local-osm-and-kauffman-packet",
-        choices=(
-            "local-osm",
-            "local-kauffman",
-            "local-osm-and-kauffman",
-            "local-osm-and-kauffman-packet",
-            "qgis-osm",
-            "qgis-kauffman",
-            "qgis-osm-and-kauffman",
-        ),
-    )
-    approve.add_argument(
-        "--verification-note",
-        default="Reviewed the hash-locked local OSM and Kauffman contact sheet.",
-    )
     approve.set_defaults(function=cmd_approve)
     finish = sub.add_parser("finish", help="Run the final verified local warp")
     finish.add_argument("tile", type=int)
     finish.add_argument("--quality-note", default="")
+    finish.add_argument(
+        "--set-aside-unledgered-raster",
+        action="store_true",
+        help="Rename aside an existing finished map that has no verification ledger",
+    )
     finish.set_defaults(function=cmd_finish)
     status = sub.add_parser("status", help="Show the resumable batch queue")
     status.set_defaults(function=cmd_status)

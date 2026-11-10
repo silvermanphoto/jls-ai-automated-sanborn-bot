@@ -13,7 +13,6 @@ import argparse
 from collections import defaultdict
 from datetime import datetime, timezone
 import difflib
-import hashlib
 from itertools import combinations
 import json
 import math
@@ -27,6 +26,7 @@ from typing import Iterable
 import cv2
 import numpy as np
 
+import sanborn_hashing
 from sanborn_georeference import (
     MAX_LEAVE_ONE_OUT_RMS_METRES,
     MAX_METRES_PER_SOURCE_PIXEL,
@@ -35,7 +35,6 @@ from sanborn_georeference import (
     fit_diagnostics,
     fit_safety_warnings,
     read_points,
-    split_fit_safety_warnings,
     triangle_area,
 )
 from sanborn_geometry import StreetGeometry, constant_axis, intersect_axes
@@ -86,11 +85,7 @@ def utc_now() -> str:
 
 
 def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
+    return sanborn_hashing.file_sha256(path)
 
 
 def name_core(value: str) -> str:
@@ -980,13 +975,8 @@ def cmd_export(args: argparse.Namespace) -> int:
     warnings = fit_safety_warnings(diagnostics)
     if correction_record and not args.correction_note.strip():
         fail("A correction note is required when source coordinates are changed.")
-    distortion_warnings, hard_warnings = split_fit_safety_warnings(warnings)
-    allow_distortion = bool(getattr(args, "allow_distortion", False))
-    distortion_note = str(getattr(args, "distortion_note", "") or "").strip()
-    if hard_warnings or distortion_warnings:
-        fail("Corrected controls fail the sheet fit test: " + "; ".join(hard_warnings + distortion_warnings))
-    if allow_distortion or distortion_note:
-        fail("A rotate-scale-shift fit has no distortion to accept; correct the controls instead.")
+    if warnings:
+        fail("Corrected controls fail the sheet fit test: " + "; ".join(warnings))
     points = args.points.expanduser().resolve()
     comparison = args.comparison.expanduser().resolve()
     write_points(points, controls)
@@ -1000,11 +990,8 @@ def cmd_export(args: argparse.Namespace) -> int:
         "corrections": correction_record,
         "diagnostics": diagnostics,
         "safety_warnings": warnings,
-        "distortion_exception": {
-            "allowed": allow_distortion,
-            "note": distortion_note,
-            "warnings": distortion_warnings,
-        },
+        # Retired 2026-11-10; kept fixed so every record has one shape.
+        "distortion_exception": {"allowed": False, "note": "", "warnings": []},
         "status": "proposed-points-awaiting-preview-approval",
     }
     comparison.parent.mkdir(parents=True, exist_ok=True)
@@ -1043,8 +1030,6 @@ def build_parser() -> argparse.ArgumentParser:
     export.add_argument("--triplet", type=int, default=0)
     export.add_argument("--source-correction", action="append", default=[])
     export.add_argument("--correction-note", default="")
-    export.add_argument("--allow-distortion", action="store_true")
-    export.add_argument("--distortion-note", default="")
     export.add_argument("--points", required=True, type=Path)
     export.add_argument("--comparison", required=True, type=Path)
     export.set_defaults(function=cmd_export)

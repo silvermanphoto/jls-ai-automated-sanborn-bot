@@ -66,7 +66,7 @@ SUPERSEDED the same day: QGIS no longer draws the Sanborns through recipe files.
   same sheet, switches a TIFF layer to its recipe in place (rollback switches it back),
   and stops before any change when a pixel block cannot be read through the recipe.
 - One-time switch of already-loaded sheets:
-  `python3 tools/sanborn_qgis.py migrate-to-recipes` prints PyQGIS code; it never saves
+  (`migrate-to-recipes` was removed in 1.31, November 2026; the baked files superseded it.) `python3 tools/sanborn_qgis.py migrate-to-recipes` printed PyQGIS code; it never saved
   and undoes every switch if one fails.
 
 ### 2026-09-28 — Version 1.23, rotate-scale-shift fit over every measured point

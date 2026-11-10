@@ -23,6 +23,7 @@ from sanborn_batch import (
     DEFAULT_INDEX_JSON,
     DEFAULT_OSM_DB,
     BATCH_DIR,
+    LOC_PAUSE_EXIT,
     parse_tiles,
 )
 
@@ -66,6 +67,8 @@ class LaunchPacer:
         self.sleeper = sleeper
         self._lock = threading.Lock()
         self._last_launch: float | None = None
+        # Set when a child reports a Library of Congress pause: no new tile starts.
+        self.paused = threading.Event()
 
     def wait(self) -> None:
         with self._lock:
@@ -92,7 +95,17 @@ def run_tile(
     # nothing. The shared launcher pacer controls the real process start.
     command = batch_command(database, tile, 0.0, osm_db, index_json, aliases)
     pacer.wait()
+    if pacer.paused.is_set():
+        return {
+            "tile": tile,
+            "returncode": LOC_PAUSE_EXIT,
+            "log": None,
+            "last_line": "not started; the run is paused for the Library of Congress",
+            "skipped": True,
+        }
     completed = subprocess.run(command, capture_output=True, text=True)
+    if completed.returncode == LOC_PAUSE_EXIT:
+        pacer.paused.set()
     log = log_dir / f"tile-{tile:04d}.log"
     log.write_text(
         f"COMMAND: {' '.join(command)}\n"
@@ -198,11 +211,21 @@ def main(argv: list[str] | None = None) -> int:
         }
         for future in as_completed(pending):
             result = future.result()
+            if result.get("skipped"):
+                continue
             state = "ready for review" if result["returncode"] == 0 else "stopped"
             print(f"Tile {result['tile']}: {state}. {result['last_line']}")
             if result["returncode"]:
                 failures.append(result)
     print(f"Per-tile logs: {log_dir}")
+    if pacer.paused.is_set():
+        print(
+            "PAUSED: the Library of Congress asked for a human check or kept refusing "
+            "requests. No further sheets were started and none was marked failed; "
+            "unstarted sheets are still queued. Wait, check the site in a browser, "
+            "then run again."
+        )
+        return LOC_PAUSE_EXIT
     if failures:
         print(f"{len(failures)} tile(s) stopped safely; the remaining tiles continued.")
         return 1

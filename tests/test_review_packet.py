@@ -4,6 +4,7 @@ import argparse
 import copy
 import json
 import math
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -201,8 +202,6 @@ class LocalReviewPacketTests(unittest.TestCase):
             source_preview_width=320,
             map_preview_width=300,
             expected_crs="EPSG:3857",
-            allow_distortion=False,
-            distortion_note="",
             replace=True,
         )
         for name, value in overrides.items():
@@ -403,16 +402,118 @@ class LocalReviewPacketTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "leave-one-out error"):
             create_packet(self._create_args(points=points, review_dir=review_dir))
 
-    def test_distortion_exception_is_retired(self):
-        with self.assertRaisesRegex(RuntimeError, "no distortion to accept"):
-            create_packet(
-                self._create_args(
-                    points=self._make_distorted_points(),
-                    review_dir=self.root / "distortion-accepted",
-                    allow_distortion=True,
-                    distortion_note="A documented historical paper stretch.",
-                )
-            )
+    def test_distortion_exception_options_are_gone(self):
+        base = ["sanborn_review.py", "create", "--source", "s", "--points", "p",
+                "--review-dir", "r", "--target-seed-json", "{}"]
+        for extra in (["--allow-distortion"], ["--distortion-note", "A stretched sheet."]):
+            with mock.patch.object(sys, "argv", base + extra), mock.patch("sys.stderr"):
+                with self.assertRaises(SystemExit):
+                    sanborn_review.parse_args()
+        review = json.loads((self.review_dir / "review.json").read_text(encoding="utf-8"))
+        # The retired keys stay in every packet with fixed values (token stability).
+        self.assertIs(review["safety_limits"]["allow_distortion"], False)
+        self.assertEqual(review["safety_limits"]["distortion_note"], "")
+        self.assertEqual(review["safety_limits"]["distortion_warnings"], [])
+        self.assertNotIn("precision_override", review["safety_limits"])
+
+    def test_approval_must_name_who_approved(self):
+        for extra in ([], ["--reference-method", "qgis-osm"], ["--verification-note", "x"]):
+            argv = ["sanborn_review.py", "approve", "--review-dir", "r"] + extra
+            with mock.patch.object(sys, "argv", argv), mock.patch("sys.stderr"):
+                with self.assertRaises(SystemExit):
+                    sanborn_review.parse_args()
+
+    def _seed_json(self, tile, *, offset_units=0.0):
+        return json.dumps(
+            {
+                "status": "selected",
+                "tile": tile,
+                "map_x": self.base_x + 400 * UNIT + offset_units,
+                "map_y": self.base_y - 400 * UNIT,
+                "suggested_max_distance": 250.0,
+                "provenance": {
+                    "path": str(self.seed_record),
+                    "sha256": __import__("hashlib").sha256(self.seed_record.read_bytes()).hexdigest(),
+                },
+            },
+            sort_keys=True,
+        )
+
+    def _make_forty_metre_points(self):
+        points = self.root / "forty-metre-controls.points"
+        points.write_text(
+            "#CRS: EPSG:3857\n"
+            "mapX,mapY,sourceX,sourceY,enable\n"
+            f"{self.base_x},{self.base_y},100,-100,1\n"
+            f"{self.base_x + 800 * UNIT},{self.base_y},900,-100,1\n"
+            f"{self.base_x},{self.base_y - 800 * UNIT},100,-900,1\n"
+            f"{self.base_x + 800 * UNIT + 68},{self.base_y - 800 * UNIT},900,-900,1\n",
+            encoding="utf-8",
+        )
+        return points
+
+    def _four_labels(self):
+        return [
+            "Test Street x Example Avenue",
+            "Test Street x Second Avenue",
+            "Third Street x Example Avenue",
+            "Third Street x Second Avenue",
+        ]
+
+    def test_precision_override_passes_tile_77_at_forty_metres(self):
+        review_dir = self.root / "tile-77"
+        create_packet(self._create_args(
+            points=self._make_forty_metre_points(), review_dir=review_dir,
+            control_label=self._four_labels(), target_seed_json=self._seed_json(77)))
+        review = json.loads((review_dir / "review.json").read_text(encoding="utf-8"))
+        self.assertGreater(review["fit_diagnostics"]["leave_one_out_rms_ground_metres"], 38.0)
+        override = review["safety_limits"]["precision_override"]
+        self.assertEqual(override["tile"], 77)
+        self.assertEqual(override["date"], "2026-09-30")
+        approve_packet(argparse.Namespace(review_dir=review_dir, approved_by="Test reviewer", note=""))
+        require_approval(review_dir)
+
+    def test_precision_override_does_not_cover_tile_78(self):
+        with self.assertRaisesRegex(RuntimeError, "leave-one-out error"):
+            create_packet(self._create_args(
+                points=self._make_forty_metre_points(), review_dir=self.root / "tile-78",
+                control_label=self._four_labels(), target_seed_json=self._seed_json(78)))
+
+    def test_precision_override_keeps_the_scale_gate(self):
+        with self.assertRaisesRegex(RuntimeError, "plausible"):
+            create_packet(self._create_args(
+                points=self._make_hard_failure_points("full-size"),
+                review_dir=self.root / "tile-77-scale", target_seed_json=self._seed_json(77)))
+
+    def test_packet_refuses_points_in_the_wrong_neighborhood(self):
+        with self.assertRaisesRegex(RuntimeError, "Expected target location gate failed"):
+            create_packet(self._create_args(
+                review_dir=self.root / "wrong-place",
+                target_seed_json=self._seed_json(154, offset_units=2000.0)))
+
+    def test_approval_write_failure_leaves_the_review_record_whole(self):
+        review_file = self.review_dir / "review.json"
+        before = review_file.read_text(encoding="utf-8")
+        real_replace = os.replace
+
+        def fail_on_review(source, target):
+            if Path(target).name == "review.json":
+                raise OSError("simulated crash")
+            return real_replace(source, target)
+
+        with mock.patch.object(sanborn_review.os, "replace", side_effect=fail_on_review):
+            with self.assertRaises(OSError):
+                approve_packet(argparse.Namespace(
+                    review_dir=self.review_dir, approved_by="Test reviewer", note=""))
+        self.assertEqual(review_file.read_text(encoding="utf-8"), before)
+        json.loads((self.review_dir / "approval.json").read_text(encoding="utf-8"))
+        self.assertEqual(list(self.review_dir.glob(".*partial*")), [])
+
+    def test_contact_sheets_are_never_lettered_in_arial(self):
+        font = sanborn_review._font_resource()
+        if font is not None:
+            self.assertNotIn("arial", font.name.lower())
+            self.assertIn(font.name, {"Futura.ttc", "GillSans.ttc"})
 
     def test_mirrored_or_implausibly_scaled_points_are_rejected(self):
         for kind, expected in (

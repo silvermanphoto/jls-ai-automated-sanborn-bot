@@ -25,8 +25,9 @@ import tempfile
 from urllib.parse import quote
 from PIL import Image
 from sanborn_georeference import (MAX_LEAVE_ONE_OUT_RMS_METRES, MIN_FIT_POINTS,
-    fit_diagnostics, fit_safety_warnings, split_fit_safety_warnings, sha256,
+    fit_diagnostics, fit_safety_warnings, sha256,
     capture_json, require_program, read_points)
+from sanborn_placement_policy import precision_override
 
 MAP_ROOT = Path('/Users/joelsilverman/Desktop/2024 Files/2024 Atlanta Map Book')
 PROJECT_ROOT = Path(os.environ.get('SANBORN_PROJECT_ROOT', Path(__file__).resolve().parents[1])).resolve()
@@ -295,19 +296,16 @@ def export(tile, request):
         preview=verify_file(workspace['previews']['reference'],'The reference preview')
         measurements=request.get('measurements')
         controls,checks,diagnostics,summary=assess_measurements(measurements,workspace['source_info'],workspace['reference_info'],coverage=lambda x,y: drawn_coverage(preview,workspace['reference_info'],x,y))
-        warnings=fit_safety_warnings(diagnostics)
-        distortion,hard=split_fit_safety_warnings(warnings)
-        allow=request.get('allow_distortion') is True
-        note=str(request.get('distortion_note') or '').strip()
-        if hard or distortion: fail('Historical corners fail the sheet fit test: '+'; '.join(hard+distortion))
-        if allow or note: fail('A rotate-scale-shift fit has no distortion to accept; correct the corners instead.')
+        warnings=fit_safety_warnings(diagnostics,precision_override=precision_override(tile))
+        if warnings: fail('Historical corners fail the sheet fit test: '+'; '.join(warnings))
         record={'schema_version':1,'tile':tile,'selection_origin':'historical-reference',
                 'created_utc':datetime.now(timezone.utc).isoformat(),'current_source':workspace['source'],
                 'reference_profile':spec,'reference':workspace['reference'],'reference_preview':workspace['previews']['reference'],
                 'source_info':workspace['source_info'],'reference_info':workspace['reference_info'],
                 'measurements':measurements,'controls':controls,'check_corners':checks,
                 'diagnostics':diagnostics,'independent_checks':summary,'safety_warnings':warnings,
-                'allow_distortion':allow,'distortion_note':note,
+                # Retired 2026-11-10; kept fixed so every record has one shape.
+                'allow_distortion':False,'distortion_note':'',
                 'status':'historical-corners-awaiting-new-comparison'}
         selected=BATCH_DIR/'selected-controls';selected.mkdir(parents=True,exist_ok=True)
         points=selected/f'tile-{tile:04d}.points'

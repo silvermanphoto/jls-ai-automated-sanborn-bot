@@ -6,7 +6,10 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 
-from sanborn_parallel import LaunchPacer, batch_command, parse_args  # noqa: E402
+from unittest import mock  # noqa: E402
+
+import sanborn_parallel  # noqa: E402
+from sanborn_parallel import LOC_PAUSE_EXIT, LaunchPacer, batch_command, parse_args, run_tile  # noqa: E402
 
 
 class SanbornParallelTests(unittest.TestCase):
@@ -47,6 +50,24 @@ class SanbornParallelTests(unittest.TestCase):
             launches.append(now[0])
 
         self.assertEqual(launches, [100.0, 101.5, 103.0])
+
+
+class LocPauseTests(unittest.TestCase):
+    def test_a_loc_pause_stops_new_tiles_from_starting(self):
+        import subprocess
+        import tempfile
+
+        pacer = LaunchPacer(0.0)
+        paused = subprocess.CompletedProcess([], LOC_PAUSE_EXIT, "", "PAUSED")
+        with tempfile.TemporaryDirectory() as folder, mock.patch.object(
+            sanborn_parallel.subprocess, "run", return_value=paused
+        ) as run:
+            first = run_tile(Path("q"), 154, 0, Path("o"), Path("i"), Path("a"), Path(folder), pacer)
+            second = run_tile(Path("q"), 155, 0, Path("o"), Path("i"), Path("a"), Path(folder), pacer)
+        self.assertEqual(first["returncode"], LOC_PAUSE_EXIT)
+        self.assertTrue(pacer.paused.is_set())
+        self.assertTrue(second.get("skipped"))
+        self.assertEqual(run.call_count, 1)
 
 
 if __name__ == "__main__":

@@ -29,6 +29,8 @@ from typing import Iterable
 
 from PIL import Image
 
+import sanborn_hashing
+
 
 TOOLS_DIR = Path(__file__).resolve().parent
 NATIVE_SOURCE = TOOLS_DIR / "sanborn_vision_ocr.m"
@@ -50,27 +52,17 @@ def utc_now() -> str:
 
 def stable_sha256(path: Path) -> tuple[str, dict[str, int]]:
     """Hash one regular file, refusing an identity change during the read."""
-    before = path.stat()
+    try:
+        digest, before = sanborn_hashing.stable_file_sha256(path)
+    except sanborn_hashing.FileChangedError:
+        fail(f"File changed while its identity was being recorded: {path}")
     fingerprint = {
         "device": int(before.st_dev),
         "inode": int(before.st_ino),
         "size": int(before.st_size),
         "mtime_ns": int(before.st_mtime_ns),
     }
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(block)
-    after = path.stat()
-    current = {
-        "device": int(after.st_dev),
-        "inode": int(after.st_ino),
-        "size": int(after.st_size),
-        "mtime_ns": int(after.st_mtime_ns),
-    }
-    if current != fingerprint:
-        fail(f"File changed while its identity was being recorded: {path}")
-    return digest.hexdigest(), fingerprint
+    return digest, fingerprint
 
 
 def atomic_write_json(path: Path, record: dict, expected_sha256: str | None) -> None:
@@ -133,21 +125,26 @@ def atomic_write_json(path: Path, record: dict, expected_sha256: str | None) -> 
 
 
 def run(command: list[str], *, timeout: int = 600) -> subprocess.CompletedProcess[str]:
-    try:
-        return subprocess.run(
-            command,
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-    except FileNotFoundError:
-        fail(f"Required local program is unavailable: {command[0]}")
-    except subprocess.TimeoutExpired:
-        fail(f"Local command timed out after {timeout} seconds: {command[0]}")
-    except subprocess.CalledProcessError as error:
-        detail = (error.stderr or error.stdout or "").strip()
-        fail(f"Local command failed ({command[0]}): {detail}")
+    """Run a local program with a time limit, trying once more if it times out."""
+    for attempt in range(2):
+        try:
+            return subprocess.run(
+                command,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+        except FileNotFoundError:
+            fail(f"Required local program is unavailable: {command[0]}")
+        except subprocess.TimeoutExpired:
+            if attempt == 0:
+                print(f"{command[0]} took over {timeout} seconds; trying once more.", file=sys.stderr)
+                continue
+            fail(f"Local command timed out twice after {timeout} seconds: {command[0]}")
+        except subprocess.CalledProcessError as error:
+            detail = (error.stderr or error.stdout or "").strip()
+            fail(f"Local command failed ({command[0]}): {detail}")
 
 
 def raster_metadata(index_raster: Path) -> dict:
@@ -814,9 +811,60 @@ def cmd_confirm(args: argparse.Namespace) -> int:
     return 0
 
 
+def _dated_copy_path(path: Path) -> Path:
+    """A free sibling name carrying the UTC time, e.g. tile-location-seeds.20261110T031500Z.json."""
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    candidate = path.with_name(f"{path.stem}.{stamp}{path.suffix}")
+    counter = 1
+    while candidate.exists():
+        counter += 1
+        candidate = path.with_name(f"{path.stem}.{stamp}-{counter}{path.suffix}")
+    return candidate
+
+
+def _keep_dated_copy(path: Path) -> Path:
+    """Copy the current file aside before it is replaced; the original stays until then."""
+    target = _dated_copy_path(path)
+    shutil.copy2(path, target)
+    return target
+
+
+def _publish_file(temporary: Path, path: Path) -> Path | None:
+    """Move a finished temporary file into place atomically.
+
+    An identical existing file is left untouched (the temporary is discarded);
+    a different one is first kept as a dated copy. Returns the dated copy, if any."""
+    kept = None
+    if path.is_file():
+        if stable_sha256(path)[0] == stable_sha256(temporary)[0]:
+            temporary.unlink()
+            return None
+        kept = _keep_dated_copy(path)
+    os.replace(temporary, path)
+    return kept
+
+
+def _seed_content(record: dict) -> dict:
+    """A seed record without its creation time, for deciding whether anything changed."""
+    return {key: value for key, value in record.items() if key != "created_utc"}
+
+
 def cmd_build(args: argparse.Namespace) -> int:
-    index_raster = args.index.expanduser().resolve()
+    """Rebuild the tile-location seed record, under a lock, without stranding approvals.
+
+    Approval packets and finished manifests bind this record's and the preview's
+    SHA-256, so an unchanged rebuild leaves both files untouched; a changed one
+    keeps the previous files as dated copies and replaces them atomically."""
     output = args.output.expanduser().resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = output.with_name(f".{output.name}.lock")
+    with lock_path.open("a+b") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        return _build_locked(args, output)
+
+
+def _build_locked(args: argparse.Namespace, output: Path) -> int:
+    index_raster = args.index.expanduser().resolve()
     cache = args.cache.expanduser().resolve()
     if not index_raster.is_file():
         fail(f"Georeferenced Sanborn index is missing: {index_raster}")
@@ -824,7 +872,15 @@ def cmd_build(args: argparse.Namespace) -> int:
     metadata = raster_metadata(index_raster)
     cache.mkdir(parents=True, exist_ok=True)
     preview = cache / "index-preview.png"
-    preview_size = make_preview(index_raster, preview, args.preview_width)
+    fresh_preview = cache / f".index-preview.{os.getpid()}.png"
+    try:
+        preview_size = make_preview(index_raster, fresh_preview, args.preview_width)
+        kept_preview = _publish_file(fresh_preview, preview)
+    finally:
+        if fresh_preview.exists():
+            fresh_preview.unlink()
+    if kept_preview is not None:
+        print(f"Previous index preview kept as {kept_preview}")
     preview_digest, preview_fingerprint = stable_sha256(preview)
     binary = cache / "sanborn-vision-ocr"
     compile_native_recognizer(binary, cache / "clang-module-cache")
@@ -882,9 +938,33 @@ def cmd_build(args: argparse.Namespace) -> int:
         "seed_count": len(seeds),
         "seeds": seeds,
     }
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    previous = None
+    if output.is_file():
+        try:
+            previous = json.loads(output.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            previous = None
     high = sum(seed["quality"] == "high" for seed in seeds)
+    if isinstance(previous, dict) and _seed_content(previous) == _seed_content(record):
+        print(f"Tile-location index unchanged; left as it was: {output}")
+        print(f"Seeds: {len(seeds)} total, {high} high-confidence; raw detections: {len(detections)}")
+        return 0
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{output.name}.", suffix=".tmp", dir=output.parent
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write((json.dumps(record, indent=2) + "\n").encode("utf-8"))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary, 0o644)
+        kept = _publish_file(temporary, output)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+    if kept is not None:
+        print(f"Previous tile-location index kept as {kept}")
     print(f"Tile-location index: {output}")
     print(f"Seeds: {len(seeds)} total, {high} high-confidence; raw detections: {len(detections)}")
     return 0

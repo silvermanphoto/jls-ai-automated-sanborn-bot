@@ -18,7 +18,6 @@ import argparse
 from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 import gzip
-import hashlib
 import json
 import math
 import os
@@ -36,6 +35,8 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 import unicodedata
 import xml.etree.ElementTree as ET
+
+import sanborn_hashing
 
 
 EARTH_RADIUS_METERS = 6_378_137.0
@@ -107,11 +108,7 @@ def utc_now() -> str:
 
 
 def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
+    return sanborn_hashing.file_sha256(path)
 
 
 def normalize_name(text: str) -> str:
@@ -173,7 +170,12 @@ def overpass_query(bbox: Sequence[float]) -> str:
     )
 
 
-def _retry_delay(error: HTTPError | URLError, attempt: int) -> int:
+# Seconds to wait for the OSM service to answer or send more data. A read that
+# stalls longer raises TimeoutError, which is retried like a dropped connection.
+OVERPASS_TIMEOUT_SECONDS = 240
+
+
+def _retry_delay(error: Exception, attempt: int) -> int:
     if isinstance(error, HTTPError):
         retry_after = error.headers.get("Retry-After")
         if retry_after and retry_after.isdigit():
@@ -219,7 +221,7 @@ def acquire_overpass(
             },
         )
         try:
-            with closing(urlopen(request, timeout=240)) as response, partial.open("wb") as handle:
+            with closing(urlopen(request, timeout=OVERPASS_TIMEOUT_SECONDS)) as response, partial.open("wb") as handle:
                 content_type = response.headers.get("Content-Type", "").lower()
                 first = response.read(4096)
                 lowered = first.lower()
@@ -242,7 +244,6 @@ def acquire_overpass(
             ]
             if remarks:
                 raise RuntimeError("The OSM service reported: " + " | ".join(remarks))
-            partial.replace(output)
             metadata = {
                 "schema_version": SCHEMA_VERSION,
                 "source_kind": "overpass",
@@ -250,15 +251,22 @@ def acquire_overpass(
                 "bbox": list(validate_bbox(bbox)),
                 "query": query,
                 "downloaded_utc": utc_now(),
-                "source_sha256": sha256(output),
-                "source_bytes": output.stat().st_size,
+                "source_sha256": sha256(partial),
+                "source_bytes": partial.stat().st_size,
             }
-            output.with_suffix(output.suffix + ".metadata.json").write_text(
+            # Metadata goes into place first: a stop between the two renames
+            # leaves no cache file, so the next run downloads again rather
+            # than reusing a cache that has no record of where it came from.
+            metadata_path = output.with_suffix(output.suffix + ".metadata.json")
+            metadata_partial = metadata_path.with_suffix(".json.part")
+            metadata_partial.write_text(
                 json.dumps(metadata, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
+            metadata_partial.replace(metadata_path)
+            partial.replace(output)
             return output
-        except (HTTPError, URLError) as error:
+        except (HTTPError, URLError, TimeoutError) as error:
             last_error = error
             if isinstance(error, HTTPError) and error.code not in {
                 429,

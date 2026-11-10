@@ -8,8 +8,9 @@ Backups live under the ignored _local directory; the master is only read.
 
 from __future__ import annotations
 
+import os
 import shutil
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 
@@ -35,8 +36,8 @@ def archive_project(
 ) -> tuple[Path, bool]:
     """Copy the project to local backup storage under today's date.
 
-    Returns the archive path and whether it replaced an earlier copy from the
-    same day.
+    Returns the archive path and ``False``: an earlier copy from the same day
+    is kept, and the new one gets the time of day in its name.
     """
     if commit:
         raise ArchiveError(
@@ -52,10 +53,25 @@ def archive_project(
     target_dir = Path(archive_dir) if archive_dir else ARCHIVE_DIR
     target_dir.mkdir(parents=True, exist_ok=True)
     target = target_dir / archive_name(project, when)
-    replaced = target.exists()
+    # A second backup on the same day never overwrites the first: the earlier
+    # copy is the only record of the project before that day's first change.
+    if target.exists():
+        clock = datetime.now().strftime("%H%M%S")
+        candidate = target.with_name(f"{target.stem} {clock}{target.suffix}")
+        counter = 2
+        while candidate.exists():
+            candidate = target.with_name(f"{target.stem} {clock}-{counter}{target.suffix}")
+            counter += 1
+        target = candidate
 
     # copy2 preserves the original's timestamps, so the archive records when
-    # Joel last saved the project rather than when this ran.
-    shutil.copy2(project, target)
+    # Joel last saved the project rather than when this ran. Copy to a
+    # temporary name first so an interrupted copy never looks like a backup.
+    partial = target.with_name(f".{target.name}.partial-{os.getpid()}")
+    try:
+        shutil.copy2(project, partial)
+        os.replace(partial, target)
+    finally:
+        partial.unlink(missing_ok=True)
 
-    return target, replaced
+    return target, False

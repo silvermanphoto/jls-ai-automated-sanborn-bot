@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 import sanborn_batch
 import sanborn_controls
+from sanborn_collections import STANDARD_STYLE
 
 
 def queue(db: sqlite3.Connection, tile: int, status: str = "queued", **fields) -> None:
@@ -215,7 +216,7 @@ class BatchSafetyTests(unittest.TestCase):
             recorded = dict(control)
             recorded["label"] = label
             recorded_controls.append(recorded)
-        affine_signature = sanborn_batch.affine_provenance_signature(
+        affine_signature = sanborn_batch.fit_provenance_signature(
             sanborn_batch.sha256(source),
             sanborn_batch.sha256(points),
             "EPSG:3857",
@@ -527,8 +528,6 @@ class BatchSafetyTests(unittest.TestCase):
                 triplet=0,
                 source_correction=[],
                 correction_note="",
-                allow_distortion=False,
-                distortion_note="",
                 points=self.folder / f"{name}.points",
                 comparison=self.folder / f"{name}-comparison.json",
             )
@@ -545,11 +544,6 @@ class BatchSafetyTests(unittest.TestCase):
         for name, targets, overrides in (
             ("distorted", ((0, 0), (48, 0), (0, -24)), {}),
             ("mirrored", ((0, 0), (48, 0), (0, 48)), {}),
-            (
-                "excused",
-                ((0, 0), (48, 0), (0, -24)),
-                {"allow_distortion": True, "distortion_note": "A stretched sheet."},
-            ),
         ):
             with self.subTest(name=name):
                 args = export_args(targets, name, **overrides)
@@ -638,6 +632,83 @@ class BatchSafetyTests(unittest.TestCase):
                 preserved = list(folder.glob("*.incomplete-*.*"))
                 self.assertEqual(len(preserved), 1)
                 self.assertEqual(preserved[0].read_bytes(), b"interrupted evidence")
+
+    def _fake_response(self, body, headers=None, status=200):
+        import io
+
+        response = mock.MagicMock()
+        stream = io.BytesIO(body)
+        response.read.side_effect = stream.read
+        response.status = status
+        response.headers = headers or {}
+        return response
+
+    def test_download_with_no_reported_length_needs_the_jpeg2000_end_marker(self):
+        destination = self.folder / "unsized.jp2"
+        cut = self._fake_response(b"\x00\x00\x00\x0cjP  scan cut short")
+        with mock.patch.object(sanborn_batch, "request", return_value=cut):
+            with self.assertRaisesRegex(RuntimeError, "end marker"):
+                sanborn_batch.download("https://example.invalid/t.jp2", destination)
+        self.assertFalse(destination.exists())
+        whole = self._fake_response(b"\x00\x00\x00\x0cjP  whole scan\xff\xd9")
+        destination.with_suffix(".jp2.part").unlink()
+        with mock.patch.object(sanborn_batch, "request", return_value=whole), mock.patch.object(
+            sanborn_batch, "clear_macos_download_warning"
+        ):
+            sanborn_batch.download("https://example.invalid/t.jp2", destination)
+        self.assertTrue(destination.read_bytes().endswith(b"\xff\xd9"))
+
+    def test_download_uses_the_get_length_when_head_had_none(self):
+        destination = self.folder / "get-sized.jp2"
+        short = self._fake_response(b"twelve bytes", headers={"Content-Length": "20"})
+        with mock.patch.object(sanborn_batch, "request", return_value=short):
+            with self.assertRaisesRegex(RuntimeError, "byte length"):
+                sanborn_batch.download("https://example.invalid/t.jp2", destination)
+        self.assertFalse(destination.exists())
+
+    def test_loc_refusal_raises_a_pause(self):
+        from urllib.error import HTTPError
+
+        refused = HTTPError("https://example.invalid", 403, "Forbidden", {}, None)
+        with mock.patch.object(sanborn_batch, "urlopen", side_effect=refused):
+            with self.assertRaises(sanborn_batch.LocPause):
+                sanborn_batch.request("https://example.invalid")
+        limited = HTTPError("https://example.invalid", 429, "Too Many", {"Retry-After": "3600"}, None)
+        with mock.patch.object(sanborn_batch, "urlopen", side_effect=limited), mock.patch.object(
+            sanborn_batch.time, "sleep"
+        ) as sleep:
+            with self.assertRaises(sanborn_batch.LocPause):
+                sanborn_batch.request("https://example.invalid")
+        sleep.assert_not_called()
+
+    def test_loc_pause_stops_the_run_without_failing_the_remaining_sheets(self):
+        with sanborn_batch.connect(self.database) as db:
+            queue(db, 1, "queued")
+            queue(db, 2, "queued")
+            db.commit()
+
+        def paused(db, tile):
+            sanborn_batch.update_tile(db, tile, status="downloading")
+            db.commit()
+            raise sanborn_batch.LocPause("The Library of Congress asked for a human check.")
+
+        for command, extra in (
+            (sanborn_batch.cmd_prepare, dict(keep_going=True)),
+            (sanborn_batch.cmd_work, dict(osm_db=None, aliases=None, index_json=None)),
+        ):
+            with self.subTest(command=command.__name__):
+                args = argparse.Namespace(
+                    database=self.database, tiles=["1-2"], limit=None, delay=0, **extra
+                )
+                with mock.patch.object(sanborn_batch, "prepare_one", side_effect=paused) as prepare:
+                    self.assertEqual(command(args), sanborn_batch.LOC_PAUSE_EXIT)
+                self.assertEqual(prepare.call_count, 1)
+                with sanborn_batch.connect(self.database) as db:
+                    statuses = [
+                        row["status"]
+                        for row in db.execute("SELECT status FROM tiles ORDER BY tile")
+                    ]
+                self.assertEqual(statuses, ["queued", "queued"])
 
     def test_complete_partial_download_is_promoted_without_an_eof_request(self):
         destination = self.folder / "tile.jp2"
@@ -845,6 +916,43 @@ class BatchSafetyTests(unittest.TestCase):
             self.assertEqual(path.read_bytes(), content)
         self.assertEqual(list((batch_dir / "archive").glob("tile-*/*")), [])
 
+    def test_stop_between_retiring_and_commit_is_recovered_by_the_next_reopen(self):
+        batch_dir, output, ledger, manifest = self._minimal_archive_fixture(pixels=b"PIXELS-V1")
+        expected = {path: path.read_bytes() for path in (output, ledger, manifest)}
+        with sanborn_batch.connect(self.database) as db:
+            queue(db, 196, "verified", output_path=str(output))
+            db.commit()
+        with mock.patch.object(sanborn_batch, "BATCH_DIR", batch_dir), mock.patch.object(
+            sanborn_batch, "validate_qgis_manifest"
+        ):
+            # The process stops after the originals are retired but before the
+            # queue change is committed.
+            db = sanborn_batch.connect(self.database)
+            pending = sanborn_batch.reopen_tile(db, 196, "queued", "Correct the controls")
+            db.rollback()
+            db.close()
+            self.assertFalse(output.exists())
+            state = json.loads(pending[0].read_text(encoding="utf-8"))
+            self.assertEqual(state["state"], "retiring")
+
+            args = argparse.Namespace(database=self.database, tile=196, to="queued", note="Retry")
+            self.assertEqual(sanborn_batch.cmd_reopen(args), 0)
+
+        with sanborn_batch.connect(self.database) as db:
+            self.assertEqual(
+                db.execute("SELECT status FROM tiles WHERE tile=196").fetchone()["status"], "queued"
+            )
+        states = sorted(
+            json.loads(path.read_text(encoding="utf-8"))["state"]
+            for path in (batch_dir / "archive" / "tile-0196").glob("*/retirement-state.json")
+        )
+        self.assertEqual(states, ["restored-after-interruption", "retired"])
+        archived = [
+            path.read_bytes()
+            for path in (batch_dir / "archive" / "tile-0196").glob("*/originals/*.tif")
+        ]
+        self.assertEqual(archived, [expected[output]] * 2)
+
     def test_retired_old_archive_is_never_restored_as_a_new_verified_result(self):
         batch_dir, output, ledger, manifest = self._minimal_archive_fixture(pixels=b"PIXELS-V1")
         row = {"tile": 196, "output_path": str(output)}
@@ -880,7 +988,25 @@ class BatchSafetyTests(unittest.TestCase):
         self.assertEqual(archived_pixels, [b"PIXELS-V1"])
         self.assertFalse(output.exists())
 
-    def test_packet_forwards_documented_distortion_exception(self):
+    def test_packet_and_approve_have_no_retired_options(self):
+        for argv in (
+            ["packet", "474", "--points", "p.points", "--allow-distortion"],
+            ["packet", "474", "--points", "p.points", "--distortion-note", "A stretched sheet."],
+            ["approve", "474"],
+            ["approve", "474", "--approved-by", "Joel", "--reference-method", "qgis-osm"],
+            ["approve", "474", "--approved-by", "Joel", "--verification-note", "x"],
+        ):
+            with self.subTest(argv=argv), mock.patch.object(
+                sys, "argv", ["sanborn_batch.py", *argv]
+            ), mock.patch("sys.stderr"):
+                with self.assertRaises(SystemExit):
+                    sanborn_batch.parse_args()
+        with mock.patch.object(
+            sys, "argv", ["sanborn_batch.py", "approve", "474", "--approved-by", "Joel Silverman"]
+        ):
+            self.assertEqual(sanborn_batch.parse_args().approved_by, "Joel Silverman")
+
+    def test_packet_builds_without_a_distortion_exception(self):
         source = self.folder / "tile-474.jp2"
         points = self.folder / "tile-474.points"
         source.write_bytes(b"scan")
@@ -894,7 +1020,6 @@ class BatchSafetyTests(unittest.TestCase):
                 source_sha256=sanborn_batch.sha256(source),
                 printed_number_seen=1,
             )
-        note = "The historic sheet is internally skewed; both independent overlays agree."
         args = argparse.Namespace(
             database=self.database,
             tile=474,
@@ -907,8 +1032,6 @@ class BatchSafetyTests(unittest.TestCase):
                 "Carroll Street x Tennelle Street",
             ],
             index_json=self._make_seed_index(474),
-            allow_distortion=True,
-            distortion_note=note,
         )
         with mock.patch.object(sanborn_batch, "BATCH_DIR", self.folder / "batch"), mock.patch.object(
             sanborn_batch, "LOCK_DIR", self.locks
@@ -916,8 +1039,8 @@ class BatchSafetyTests(unittest.TestCase):
             self.assertEqual(sanborn_batch.cmd_packet(args), 0)
 
         command = run.call_args.args[0]
-        self.assertIn("--allow-distortion", command)
-        self.assertEqual(command[command.index("--distortion-note") + 1], note)
+        self.assertNotIn("--allow-distortion", command)
+        self.assertNotIn("--distortion-note", command)
         with sanborn_batch.connect(self.database) as db:
             row = db.execute("SELECT * FROM tiles WHERE tile=474").fetchone()
         self.assertEqual(row["status"], "awaiting-approval")
@@ -950,8 +1073,6 @@ class BatchSafetyTests(unittest.TestCase):
                 "Houston Street x Butler Street",
             ],
             index_json=self._make_seed_index(154),
-            allow_distortion=False,
-            distortion_note="",
         )
         with mock.patch.object(sanborn_batch, "LOCK_DIR", self.locks), mock.patch.object(
             sanborn_batch.subprocess, "run"
@@ -1034,8 +1155,6 @@ class BatchSafetyTests(unittest.TestCase):
             kauffman_map=None,
             control_label=labels,
             index_json=empty_index,
-            allow_distortion=False,
-            distortion_note="",
         )
         with mock.patch.object(sanborn_batch, "LOCK_DIR", self.locks), mock.patch.object(
             sanborn_batch.subprocess, "run"
@@ -1100,6 +1219,20 @@ class BatchSafetyTests(unittest.TestCase):
         batch_dir = self.folder / "batch"
         args = argparse.Namespace(database=self.database, tile=tile, quality_note="")
 
+        # A finished map with no ledger beside it is never renamed without a flag.
+        final_ledger.rename(final_ledger.with_name("held-ledger.json"))
+        with mock.patch.object(sanborn_batch, "DOWNLOAD_DIR", downloads), mock.patch.object(
+            sanborn_batch, "LOCK_DIR", self.locks
+        ), mock.patch.object(
+            sanborn_batch, "require_approval", return_value=(review, approval)
+        ), mock.patch.object(sanborn_batch.subprocess, "run") as run:
+            with self.assertRaisesRegex(RuntimeError, "no verification ledger"):
+                sanborn_batch.cmd_finish(args)
+            run.assert_not_called()
+        self.assertEqual(sorted(path.name for path in downloads.iterdir()),
+                         sorted([final_output.name, "held-ledger.json"]))
+        final_ledger.with_name("held-ledger.json").rename(final_ledger)
+
         with mock.patch.object(sanborn_batch, "DOWNLOAD_DIR", downloads), mock.patch.object(
             sanborn_batch, "BATCH_DIR", batch_dir
         ), mock.patch.object(sanborn_batch, "LOCK_DIR", self.locks), mock.patch.object(
@@ -1155,6 +1288,8 @@ class BatchSafetyTests(unittest.TestCase):
         )
         self.assertFalse(manifest["save_project"])
         self.assertFalse(manifest["expanded"])
+        for key in ("brightness", "gamma", "contrast", "opacity"):
+            self.assertEqual(manifest[key], STANDARD_STYLE[key])
         with sanborn_batch.connect(self.database) as db:
             row = db.execute("SELECT * FROM tiles WHERE tile=?", (tile,)).fetchone()
         self.assertEqual(row["status"], "verified")

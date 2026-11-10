@@ -10,7 +10,7 @@ required artifact.  No live QGIS session or network request is needed.
 from __future__ import annotations
 
 from sanborn_historical import validate_evidence as validate_historical_evidence
-from sanborn_placement_policy import require_current_placement_evidence
+from sanborn_placement_policy import precision_override, require_current_placement_evidence
 
 import argparse
 from datetime import datetime, timezone
@@ -28,6 +28,7 @@ from typing import Any, NoReturn, Sequence
 from PIL import Image, ImageDraw, ImageFont, ImageOps, __version__ as PILLOW_VERSION
 
 from sanborn_georeference import (
+    MAX_TARGET_SEED_DISTANCE,
     MIN_FIT_POINTS,
     fit_diagnostics,
     fit_safety_limits,
@@ -36,8 +37,9 @@ from sanborn_georeference import (
     read_points,
     require_expected_crs,
     require_program,
+    require_target_location,
     sha256,
-    split_fit_safety_warnings,
+    target_location_diagnostics,
     write_similarity_vrt,
 )
 from sanborn_osm import iter_way_geometries, read_metadata
@@ -49,6 +51,15 @@ from sanborn_osm import iter_way_geometries, read_metadata
 SCHEMA_VERSION = 4
 LEGACY_AFFINE_SCHEMA_VERSION = 3
 LOCAL_REFERENCE_METHOD = "local-osm-and-kauffman-packet"
+# The retired "accept distortion" option (retired 2026-11-10) left these keys in
+# every packet's fit limits, inside the approval token. They are still written
+# with these fixed values so old and new packets keep one shape; nothing reads
+# them as a choice.
+RETIRED_DISTORTION_KEYS = {
+    "allow_distortion": False,
+    "distortion_note": "",
+    "distortion_warnings": [],
+}
 SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_KAUFFMAN_MAP = Path(
@@ -104,8 +115,11 @@ def parse_target_seed_context(value: str) -> dict[str, Any]:
         fail("The selected index-map seed is missing numeric tile or location values.")
     if tile <= 0 or not math.isfinite(map_x) or not math.isfinite(map_y):
         fail("The selected index-map seed has invalid tile or location values.")
-    if not 0 < distance <= 250.0:
-        fail("The selected index-map seed tolerance must be greater than zero and at most 250.")
+    if not 0 < distance <= MAX_TARGET_SEED_DISTANCE:
+        fail(
+            "The selected index-map seed tolerance must be greater than zero and at most "
+            f"{MAX_TARGET_SEED_DISTANCE:g} map units."
+        )
     provenance = context.get("provenance")
     if (
         not isinstance(provenance, dict)
@@ -138,9 +152,10 @@ def default_osm_database() -> Path:
 
 
 def _font_resource() -> Path | None:
+    # Joel's rule: never Arial. Futura, then Gill Sans, then Pillow's own font.
     candidates = (
-        Path("/System/Library/Fonts/Supplemental/Arial Bold.ttf"),
-        Path("/System/Library/Fonts/Supplemental/Arial.ttf"),
+        Path("/System/Library/Fonts/Supplemental/Futura.ttc"),
+        Path("/System/Library/Fonts/Supplemental/GillSans.ttc"),
     )
     return next((candidate for candidate in candidates if candidate.is_file()), None)
 
@@ -547,6 +562,57 @@ def _current_artifacts(review: dict[str, Any], gdalinfo: str) -> dict[str, Any]:
     return current
 
 
+def packet_safety_limits(
+    expected_crs: str,
+    target_seed_context: dict[str, Any],
+    override: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """The fit limits a packet records and its approval token binds."""
+    limits = {
+        **fit_safety_limits(expected_crs, precision_override=override),
+        "target_seed_context": target_seed_context,
+        **RETIRED_DISTORTION_KEYS,
+    }
+    for key in ("expected_target_bbox", "expected_target_seed", "max_target_seed_distance"):
+        limits.pop(key)
+    return limits
+
+
+def seed_location_check(
+    controls: list[dict[str, Any]],
+    diagnostics: dict[str, Any],
+    source_width: int,
+    source_height: int,
+    target_seed_context: dict[str, Any],
+) -> dict[str, object]:
+    """The wrong-neighborhood check the final warp applies, run on a packet."""
+    seed_x = float(target_seed_context["map_x"])
+    seed_y = float(target_seed_context["map_y"])
+    distance = float(target_seed_context["suggested_max_distance"])
+    return target_location_diagnostics(
+        controls,
+        diagnostics,
+        source_width,
+        source_height,
+        expected_target_bbox=[seed_x - distance, seed_y - distance, seed_x + distance, seed_y + distance],
+        expected_target_seed=[seed_x, seed_y],
+        max_target_seed_distance=distance,
+    )
+
+
+def _write_json_atomic(path: Path, value: dict[str, Any]) -> None:
+    """Replace a record whole, so a crash leaves the old file or the new one."""
+    partial = path.with_name(f".{path.name}.partial-{os.getpid()}")
+    try:
+        with partial.open("w", encoding="utf-8") as handle:
+            handle.write(json.dumps(value, indent=2, sort_keys=True) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(partial, path)
+    finally:
+        partial.unlink(missing_ok=True)
+
+
 def current_review_state(review: dict[str, Any]) -> tuple[str, dict]:
     """Recompute the approval lock from every input and artifact used now."""
 
@@ -579,47 +645,20 @@ def current_review_state(review: dict[str, Any]) -> tuple[str, dict]:
             )
     limits = review["safety_limits"]
     require_expected_crs(target_crs, limits.get("expected_crs", "EPSG:3857"))
-    expected_limits = {
-        **fit_safety_limits(limits.get("expected_crs", "EPSG:3857")),
-        "target_seed_context": limits.get("target_seed_context"),
-        "allow_distortion": False,
-        "distortion_note": "",
-        "distortion_warnings": [],
-    }
-    for key in ("expected_target_bbox", "expected_target_seed", "max_target_seed_distance"):
-        expected_limits.pop(key)
+    seed_context = limits.get("target_seed_context")
+    if not isinstance(seed_context, dict):
+        fail("The review packet has no independent index-map seed. Rebuild it.")
+    override = precision_override(seed_context.get("tile"))
+    expected_limits = packet_safety_limits(
+        limits.get("expected_crs", "EPSG:3857"), seed_context, override
+    )
     if limits != expected_limits:
         fail("The review packet's fit limits differ from the current pass test. Rebuild it.")
     diagnostics = fit_diagnostics(controls, source_width, source_height)
-    warnings = fit_safety_warnings(diagnostics)
-    distortion_warnings, hard_warnings = split_fit_safety_warnings(warnings)
-    allow_distortion = limits.get("allow_distortion", False)
-    distortion_note = limits.get("distortion_note", "")
-    recorded_warnings = limits.get("distortion_warnings", [])
-    if not isinstance(allow_distortion, bool):
-        fail("The review packet has an invalid distortion-override flag.")
-    if not isinstance(distortion_note, str):
-        fail("The review packet has an invalid distortion-override note.")
-    if not isinstance(recorded_warnings, list) or not all(
-        isinstance(warning, str) for warning in recorded_warnings
-    ):
-        fail("The review packet has an invalid distortion-warning record.")
-    if allow_distortion and not distortion_note.strip():
-        fail("The review packet allows distortion without a nonblank explanation.")
-    if recorded_warnings != distortion_warnings:
-        fail(
-            "The current fit warnings differ from the hash-locked "
-            "review packet. Rebuild and approve it again."
-        )
-    if hard_warnings:
-        fail("The current controls fail a hard safety gate: " + "; ".join(hard_warnings))
-    if distortion_warnings and not allow_distortion:
-        fail(
-            "The current controls fail the distortion safety gate: "
-            + "; ".join(distortion_warnings)
-        )
-    if allow_distortion and not distortion_warnings:
-        fail("The review packet claims a distortion exception that is no longer needed.")
+    warnings = fit_safety_warnings(diagnostics, precision_override=override)
+    if warnings:
+        fail("The current controls fail the sheet fit test: " + "; ".join(warnings))
+    require_target_location(seed_location_check(controls, diagnostics, source_width, source_height, seed_context))
 
     labels = [str(control["label"]) for control in points_record["controls"]]
     if len(labels) != len(controls):
@@ -708,29 +747,15 @@ def create_packet(args: argparse.Namespace) -> int:
             "with --control-label, in file order."
         )
     diagnostics = fit_diagnostics(controls, source_width, source_height)
-    safety_limits = {
-        **fit_safety_limits(args.expected_crs),
-        "target_seed_context": target_seed_context,
-    }
-    for key in ("expected_target_bbox", "expected_target_seed", "max_target_seed_distance"):
-        safety_limits.pop(key)
-    warnings = fit_safety_warnings(diagnostics)
-    distortion_warnings, hard_warnings = split_fit_safety_warnings(warnings)
-    allow_distortion = False
-    distortion_note = ""
-    if getattr(args, "allow_distortion", False) or str(getattr(args, "distortion_note", "") or "").strip():
-        fail("A rotate-scale-shift fit has no distortion to accept; correct the points instead.")
-    if hard_warnings or distortion_warnings:
-        fail(
-            "Review packet rejected by the sheet fit test: "
-            + "; ".join(hard_warnings + distortion_warnings)
-        )
-    safety_limits.update(
-        {
-            "allow_distortion": allow_distortion,
-            "distortion_note": distortion_note,
-            "distortion_warnings": list(distortion_warnings),
-        }
+    override = precision_override(target_seed_context["tile"])
+    safety_limits = packet_safety_limits(args.expected_crs, target_seed_context, override)
+    warnings = fit_safety_warnings(diagnostics, precision_override=override)
+    if warnings:
+        fail("Review packet rejected by the sheet fit test: " + "; ".join(warnings))
+    # Refuse a sheet placed in the wrong neighborhood now, before Joel spends
+    # review time on it, not only at the final warp.
+    require_target_location(
+        seed_location_check(controls, diagnostics, source_width, source_height, target_seed_context)
     )
 
     artifact_paths = {
@@ -1042,13 +1067,9 @@ def approve_packet(args: argparse.Namespace) -> int:
             "artifact_sha256": artifact_hashes,
         },
     }
-    (review_dir / "approval.json").write_text(
-        json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    _write_json_atomic(review_dir / "approval.json", record)
     review["approved"] = True
-    review_file.write_text(
-        json.dumps(review, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    _write_json_atomic(review_file, review)
     print(f"Approved review packet: {review_dir}")
     print(f"Approval token: {token}")
     return 0
@@ -1158,26 +1179,17 @@ def parse_args() -> argparse.Namespace:
     create.add_argument("--source-preview-width", type=int, default=1600)
     create.add_argument("--map-preview-width", type=int, default=1400)
     create.add_argument("--expected-crs", default="EPSG:3857")
-    create.add_argument(
-        "--allow-distortion",
-        action="store_true",
-        help="Retired: a rotate-scale-shift fit has no distortion to accept",
-    )
-    create.add_argument(
-        "--distortion-note",
-        default="",
-        help="Documented historical evidence for an allowed distortion",
-    )
     create.add_argument("--replace", action="store_true")
     create.set_defaults(function=create_packet)
 
     approve = sub.add_parser("approve", help="Lock approval to the exact local packet hash")
     approve.add_argument("--review-dir", required=True, type=Path)
-    approve.add_argument("--approved-by", default="Joel or ChatGPT")
+    approve.add_argument(
+        "--approved-by",
+        required=True,
+        help="Name of the person or assistant approving, recorded in the approval",
+    )
     approve.add_argument("--note", default="")
-    # Retain the former flags as ignored compatibility shims for sanborn_batch.py.
-    approve.add_argument("--reference-method", help=argparse.SUPPRESS)
-    approve.add_argument("--verification-note", help=argparse.SUPPRESS)
     approve.set_defaults(function=approve_packet)
     return parser.parse_args()
 

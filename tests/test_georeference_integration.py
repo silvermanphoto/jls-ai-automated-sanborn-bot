@@ -112,7 +112,7 @@ class GeoreferenceIntegrationTests(unittest.TestCase):
             self.assertAlmostEqual(geotransform[3], max(footprint_y), delta=abs(geotransform[5]) * 1.1)
             self.assertEqual(
                 record["transformation"]["affine_provenance_signature"],
-                sanborn_batch.affine_provenance_signature(
+                sanborn_batch.fit_provenance_signature(
                     sanborn_batch.sha256(source),
                     sanborn_batch.sha256(points),
                     "EPSG:3857",

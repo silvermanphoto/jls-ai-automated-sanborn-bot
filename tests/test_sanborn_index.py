@@ -126,6 +126,58 @@ class SanbornIndexTests(unittest.TestCase):
             self.assertEqual(record["preview"]["sha256"], hashlib.sha256(preview.read_bytes()).hexdigest())
             self.assertEqual(record["preview"]["bytes"], preview.stat().st_size)
 
+    def test_local_command_is_retried_once_after_a_timeout(self):
+        timeout = subprocess.TimeoutExpired("gdalinfo", 600)
+        with mock.patch.object(sanborn_index.subprocess, "run",
+                               side_effect=[timeout, "finished"]) as run, mock.patch("sys.stderr"):
+            self.assertEqual(sanborn_index.run(["gdalinfo"]), "finished")
+        self.assertEqual(run.call_count, 2)
+        with mock.patch.object(sanborn_index.subprocess, "run", side_effect=timeout), \
+                mock.patch("sys.stderr"), self.assertRaisesRegex(Exception, "timed out twice"):
+            sanborn_index.run(["gdalinfo"])
+
+    def test_index_rebuild_keeps_an_unchanged_record_and_dates_a_replaced_one(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            raster = folder / "index.tif"
+            raster.write_bytes(b"index raster fixture")
+            output = folder / "tile-location-seeds.json"
+            cache = folder / "cache"
+            metadata = {"width": 2000, "height": 1000,
+                        "geotransform": [1000.0, 2.0, 0.0, 2000.0, 0.0, -3.0], "crs": "EPSG:3857"}
+
+            def make_preview(_raster, path, _width):
+                Image.new("RGB", (1000, 500), "white").save(path)
+                return 1000, 500
+
+            arguments = argparse.Namespace(index=raster, output=output, cache=cache, preview_width=1000,
+                                           crop_size=[], stride=0, maximum_tile=549, cluster_radius=55.0)
+
+            def build(meta):
+                with mock.patch("sanborn_index.raster_metadata", return_value=meta), mock.patch(
+                    "sanborn_index.make_preview", side_effect=make_preview
+                ), mock.patch("sanborn_index.compile_native_recognizer"), mock.patch(
+                    "sanborn_index.make_crops", return_value={}
+                ), mock.patch("sanborn_index.recognize_crops", return_value=[]), \
+                        mock.patch("builtins.print"):
+                    sanborn_index.cmd_build(arguments)
+
+            build(metadata)
+            first = output.read_bytes()
+            preview = cache / "index-preview.png"
+            preview_stat = preview.stat()
+            build(metadata)
+            self.assertEqual(output.read_bytes(), first)
+            self.assertEqual(preview.stat().st_mtime_ns, preview_stat.st_mtime_ns)
+            self.assertEqual(sorted(path.name for path in folder.glob("tile-location-seeds*.json")),
+                             ["tile-location-seeds.json"])
+            build(dict(metadata, width=2001))
+            kept = [path for path in folder.glob("tile-location-seeds.*.json")]
+            self.assertEqual(len(kept), 1)
+            self.assertEqual(kept[0].read_bytes(), first)
+            self.assertEqual(json.loads(output.read_text())["index"]["width"], 2001)
+            self.assertEqual([path.name for path in folder.iterdir() if path.name.endswith(".tmp")], [])
+
     def test_native_recognizer_is_published_atomically_and_reused(self):
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)

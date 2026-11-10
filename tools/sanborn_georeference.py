@@ -36,10 +36,6 @@ POINTS_METADATA_KEY = "SANBORN_POINTS_SHA256"
 AFFINE_METADATA_KEY = "SANBORN_AFFINE_SIGNATURE"
 PIPELINE_METADATA_KEY = "SANBORN_PIPELINE"
 PIPELINE_METADATA_VALUE = "local-first-similarity-v3"
-# Rasters finished before 2026-09-28 were warped by a three-point affine. They are
-# only ever verified against their frozen evidence; nothing new is built that way.
-LEGACY_AFFINE_PIPELINE_VALUE = "local-first-affine-v2"
-LEGACY_AFFINE_TRANSFORMATION_TYPE = "Polynomial 1 / global affine"
 SIMILARITY_TRANSFORMATION_TYPE = (
     "Similarity: rotation + uniform scale + shift, least squares over all measured points"
 )
@@ -48,8 +44,11 @@ MIN_FIT_POINTS = 3
 MAX_LEAVE_ONE_OUT_RMS_METRES = 15.0
 MIN_METRES_PER_SOURCE_PIXEL = 0.035
 MAX_METRES_PER_SOURCE_PIXEL = 0.075
-SUSPICIOUS_SKEW_DEGREES = 1.0
 MAX_SKEW_DEGREES = 3.0
+# Largest allowed distance from a sheet's index-map seed to its fitted footprint.
+# EPSG:3857 map units, not ground meters: 250 units is about 208 m on the ground
+# at Atlanta's latitude (250 x cos 33.75 degrees).
+MAX_TARGET_SEED_DISTANCE = 250.0
 _SHA256_CACHE: dict[tuple[str, int, int, int, int, int], str] = {}
 
 
@@ -91,14 +90,14 @@ def sha256(path: Path) -> str:
     return value
 
 
-def affine_provenance_signature(
+def fit_provenance_signature(
     source_sha256: str,
     points_sha256: str,
     target_crs: str,
     diagnostics: dict[str, object],
     safety_limits: dict[str, object],
 ) -> str:
-    """Bind the raster itself to the exact inputs and verified affine decision."""
+    """Bind the raster itself to the exact inputs and verified fit decision."""
     payload = {
         "source_sha256": source_sha256,
         "points_sha256": points_sha256,
@@ -175,102 +174,11 @@ def read_points(path: Path) -> tuple[str, list[dict[str, float | str]]]:
     return target_crs, controls
 
 
-def _solve_three(rows: list[list[float]], values: list[float]) -> list[float]:
-    """Solve a 3 by 3 system without adding a heavy numerical dependency."""
-    matrix = [list(row) + [value] for row, value in zip(rows, values)]
-    for column in range(3):
-        pivot = max(range(column, 3), key=lambda row: abs(matrix[row][column]))
-        if abs(matrix[pivot][column]) < 1e-12:
-            fail("The three source controls are collinear or duplicated.")
-        matrix[column], matrix[pivot] = matrix[pivot], matrix[column]
-        divisor = matrix[column][column]
-        matrix[column] = [value / divisor for value in matrix[column]]
-        for row in range(3):
-            if row == column:
-                continue
-            factor = matrix[row][column]
-            matrix[row] = [
-                value - factor * pivot_value
-                for value, pivot_value in zip(matrix[row], matrix[column])
-            ]
-    return [matrix[row][3] for row in range(3)]
-
-
 def triangle_area(points: list[tuple[float, float]]) -> float:
     (x1, y1), (x2, y2), (x3, y3) = points
     return abs(
         x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2)
     ) / 2.0
-
-
-def legacy_affine_diagnostics(
-    controls: list[dict[str, float | str]],
-    source_width: int | None = None,
-    source_height: int | None = None,
-) -> dict[str, float | bool | list[list[float]]]:
-    """Recompute a legacy three-point affine, only to verify rasters frozen before 2026-09-28."""
-    if len(controls) != 3:
-        fail("A legacy three-point affine record must contain exactly three controls.")
-    source_points = [
-        (float(control["source_x"]), float(control["source_line_gdal"]))
-        for control in controls
-    ]
-    target_points = [
-        (float(control["map_x"]), float(control["map_y"]))
-        for control in controls
-    ]
-    rows = [[x, y, 1.0] for x, y in source_points]
-    x_coefficients = _solve_three(rows, [point[0] for point in target_points])
-    y_coefficients = _solve_three(rows, [point[1] for point in target_points])
-    a, b = x_coefficients[0], x_coefficients[1]
-    d, e = y_coefficients[0], y_coefficients[1]
-
-    # Singular values of the 2 by 2 linear component from eigenvalues of A^T A.
-    ata_00 = a * a + d * d
-    ata_01 = a * b + d * e
-    ata_11 = b * b + e * e
-    trace = ata_00 + ata_11
-    discriminant = max(0.0, trace * trace - 4.0 * (ata_00 * ata_11 - ata_01 * ata_01))
-    eigen_high = (trace + math.sqrt(discriminant)) / 2.0
-    eigen_low = (trace - math.sqrt(discriminant)) / 2.0
-    scale_high = math.sqrt(max(0.0, eigen_high))
-    scale_low = math.sqrt(max(0.0, eigen_low))
-    if scale_low < 1e-15:
-        fail("The affine transform collapses one dimension.")
-
-    column_x = (a, d)
-    column_y = (b, e)
-    cosine = (
-        column_x[0] * column_y[0] + column_x[1] * column_y[1]
-    ) / (math.hypot(*column_x) * math.hypot(*column_y))
-    axis_angle = math.degrees(math.acos(max(-1.0, min(1.0, cosine))))
-    determinant = a * e - b * d
-    source_area = triangle_area(source_points)
-    target_area = triangle_area(target_points)
-    coverage = None
-    x_span_fraction = None
-    y_span_fraction = None
-    if source_width and source_height:
-        coverage = source_area / float(source_width * source_height)
-        source_x_values = [point[0] for point in source_points]
-        source_y_values = [point[1] for point in source_points]
-        x_span_fraction = (max(source_x_values) - min(source_x_values)) / source_width
-        y_span_fraction = (max(source_y_values) - min(source_y_values)) / source_height
-
-    return {
-        "matrix": [[a, b], [d, e]],
-        "offset": [x_coefficients[2], y_coefficients[2]],
-        "determinant": determinant,
-        "unexpected_mirroring": determinant >= 0,
-        "singular_scales": [scale_high, scale_low],
-        "scale_ratio": scale_high / scale_low,
-        "axis_angle_degrees": axis_angle,
-        "source_triangle_area_pixels2": source_area,
-        "target_triangle_area_crs2": target_area,
-        "source_triangle_coverage": coverage,
-        "source_x_span_fraction": x_span_fraction,
-        "source_y_span_fraction": y_span_fraction,
-    }
 
 
 def solve_similarity(
@@ -435,7 +343,7 @@ def _transform_point(
     matrix = diagnostics["matrix"]
     offset = diagnostics["offset"]
     if not isinstance(matrix, list) or not isinstance(offset, list):
-        fail("Affine diagnostics are missing their matrix or offset.")
+        fail("Fit diagnostics are missing their matrix or offset.")
     return (
         float(matrix[0][0]) * source_x
         + float(matrix[0][1]) * source_y
@@ -490,7 +398,7 @@ def _distance_to_polygon(
 
 def target_location_diagnostics(
     controls: list[dict[str, float | str]],
-    affine: dict[str, object],
+    fit: dict[str, object],
     source_width: int,
     source_height: int,
     *,
@@ -498,9 +406,9 @@ def target_location_diagnostics(
     expected_target_seed: list[float] | tuple[float, float] | None = None,
     max_target_seed_distance: float = 0.0,
 ) -> dict[str, object]:
-    """Check that a plausible affine shape is also in the expected neighborhood.
+    """Check that a plausible fitted sheet is also in the expected neighborhood.
 
-    The optional bounding box is a permitted envelope for all three target
+    The optional bounding box is a permitted envelope for all the target
     controls. The optional seed is an independently known point that should lie
     inside the transformed scan footprint (or no farther away than the explicit
     allowance). These checks catch a perfectly coherent triplet copied to the
@@ -528,7 +436,7 @@ def target_location_diagnostics(
         (float(source_width), float(source_height)),
         (0.0, float(source_height)),
     ]
-    footprint = [_transform_point(affine, x, y) for x, y in source_corners]
+    footprint = [_transform_point(fit, x, y) for x, y in source_corners]
     footprint_x = [point[0] for point in footprint]
     footprint_y = [point[1] for point in footprint]
 
@@ -586,7 +494,7 @@ def target_location_diagnostics(
 
 
 def target_location_warnings(location: dict[str, object]) -> list[str]:
-    """Return hard location failures separately from overridable shape warnings."""
+    """Return every wrong-neighborhood failure for a fitted sheet."""
     warnings: list[str] = []
     if location.get("all_target_controls_inside_expected_bbox") is False:
         warnings.append(
@@ -603,69 +511,10 @@ def target_location_warnings(location: dict[str, object]) -> list[str]:
 
 
 def require_target_location(location: dict[str, object]) -> None:
-    """Reject a wrong-neighborhood transform even if distortion is overridden."""
+    """Reject a fit placed in the wrong neighborhood."""
     warnings = target_location_warnings(location)
     if warnings:
         fail("Expected target location gate failed: " + "; ".join(warnings))
-
-
-def legacy_affine_safety_warnings(
-    diagnostics: dict[str, object],
-    *,
-    max_scale_ratio: float = 1.15,
-    min_axis_angle: float = 85.0,
-    max_axis_angle: float = 95.0,
-    min_triangle_coverage: float = 0.02,
-    min_x_span_fraction: float = 0.20,
-    min_y_span_fraction: float = 0.20,
-) -> list[str]:
-    """Legacy affine gates, used only to verify rasters frozen before 2026-09-28."""
-    warnings: list[str] = []
-    if float(diagnostics["scale_ratio"]) > max_scale_ratio:
-        warnings.append(
-            f"scale ratio {diagnostics['scale_ratio']:.4f} exceeds {max_scale_ratio:.4f}"
-        )
-    axis_angle = float(diagnostics["axis_angle_degrees"])
-    if not min_axis_angle <= axis_angle <= max_axis_angle:
-        warnings.append(
-            f"axis angle {axis_angle:.3f} is outside "
-            f"{min_axis_angle:.1f}-{max_axis_angle:.1f} degrees"
-        )
-    if bool(diagnostics["unexpected_mirroring"]):
-        warnings.append("the transform has an unexpected mirrored orientation")
-
-    coverage = diagnostics.get("source_triangle_coverage")
-    if coverage is not None and float(coverage) < min_triangle_coverage:
-        warnings.append(
-            f"control triangle covers only {float(coverage) * 100:.2f}% of the scan; "
-            f"minimum is {min_triangle_coverage * 100:.2f}%"
-        )
-    x_span = diagnostics.get("source_x_span_fraction")
-    if x_span is not None and float(x_span) < min_x_span_fraction:
-        warnings.append(
-            f"controls span only {float(x_span) * 100:.2f}% of scan width; "
-            f"minimum is {min_x_span_fraction * 100:.2f}%"
-        )
-    y_span = diagnostics.get("source_y_span_fraction")
-    if y_span is not None and float(y_span) < min_y_span_fraction:
-        warnings.append(
-            f"controls span only {float(y_span) * 100:.2f}% of scan height; "
-            f"minimum is {min_y_span_fraction * 100:.2f}%"
-        )
-    location = diagnostics.get("target_location_check")
-    if isinstance(location, dict):
-        warnings.extend(target_location_warnings(location))
-    return warnings
-
-
-def split_fit_safety_warnings(warnings: list[str]) -> tuple[list[str], list[str]]:
-    """Separate historic shape distortion from never-overridable control failures."""
-    overridable_prefixes = ("scale ratio ", "axis angle ")
-    overridable = [
-        warning for warning in warnings if warning.startswith(overridable_prefixes)
-    ]
-    hard = [warning for warning in warnings if warning not in overridable]
-    return overridable, hard
 
 
 def fit_safety_warnings(
@@ -676,11 +525,15 @@ def fit_safety_warnings(
     min_metres_per_pixel: float = MIN_METRES_PER_SOURCE_PIXEL,
     max_metres_per_pixel: float = MAX_METRES_PER_SOURCE_PIXEL,
     max_skew: float = MAX_SKEW_DEGREES,
+    precision_override: dict[str, object] | None = None,
 ) -> list[str]:
     """Return every reason a similarity-fitted sheet fails Joel's pass test.
 
-    None of these can be overridden: a sheet either predicts its own measured
-    points to within the limit at a plausible scale, or its points need fixing.
+    A sheet either predicts its own measured points to within the limit at a
+    plausible scale, or its points need fixing. The one exception is Joel's
+    precision-requirement override (sanborn_placement_policy.precision_override):
+    it waives the leave-one-out limit only. The similarity fit, the three-point
+    minimum, the scale gate, skew, mirroring and location checks still apply.
     """
     warnings: list[str] = []
     if diagnostics.get("model") != FIT_MODEL:
@@ -692,7 +545,7 @@ def fit_safety_warnings(
             f"only {count} measured points; at least {min_points} are required"
         )
     loo_rms = float(diagnostics["leave_one_out_rms_ground_metres"])
-    if loo_rms > max_leave_one_out_rms:
+    if loo_rms > max_leave_one_out_rms and not precision_override:
         warnings.append(
             f"leave-one-out error {loo_rms:.2f} m RMS exceeds {max_leave_one_out_rms:.2f} m"
         )
@@ -718,9 +571,15 @@ def fit_safety_limits(
     expected_target_bbox: list[float] | None = None,
     expected_target_seed: list[float] | None = None,
     max_target_seed_distance: float = 0.0,
+    *,
+    precision_override: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    """The recorded pass test, bound into every new ledger and signature."""
-    return {
+    """The recorded pass test, bound into every new ledger and signature.
+
+    A precision-requirement override is recorded only when one is used, so the
+    limits of every other sheet keep their existing shape and tokens.
+    """
+    limits: dict[str, object] = {
         "fit_model": FIT_MODEL,
         "min_points": MIN_FIT_POINTS,
         "max_leave_one_out_rms_metres": MAX_LEAVE_ONE_OUT_RMS_METRES,
@@ -731,6 +590,9 @@ def fit_safety_limits(
         "expected_target_seed": expected_target_seed,
         "max_target_seed_distance": max_target_seed_distance,
     }
+    if precision_override:
+        limits["precision_override"] = dict(precision_override)
+    return limits
 
 
 def write_similarity_vrt(
@@ -754,6 +616,41 @@ def write_similarity_vrt(
     if replaced != 1:
         fail("The temporary VRT has no single geotransform to replace.")
     vrt.write_text(text, encoding="utf-8")
+
+
+def _process_is_running(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def sweep_stale_partials(output: Path, ledger: Path) -> list[Path]:
+    """Remove half-written files left by an earlier warp of this output that was killed.
+
+    A file whose process is still running is left alone.
+    """
+    patterns = (
+        (f".{output.stem}.partial-", output.suffix),
+        (f".{ledger.name}.partial-", ""),
+    )
+    removed: list[Path] = []
+    for prefix, suffix in patterns:
+        for candidate in output.parent.glob(f"{prefix}*{suffix}"):
+            pid_text = candidate.name[len(prefix):]
+            if suffix:
+                pid_text = pid_text[: -len(suffix)]
+            if not pid_text.isdigit() or int(pid_text) == os.getpid():
+                continue
+            if _process_is_running(int(pid_text)):
+                continue
+            candidate.unlink(missing_ok=True)
+            removed.append(candidate)
+            print(f"Removed a half-written file from an interrupted earlier run: {candidate.name}")
+    return removed
 
 
 def require_expected_crs(target_crs: str, expected_crs: str = "EPSG:3857") -> None:
@@ -829,11 +726,23 @@ def parse_args() -> argparse.Namespace:
             "Allowed CRS-unit distance from the expected seed to the transformed footprint"
         ),
     )
+    parser.add_argument(
+        "--tile",
+        type=int,
+        help=(
+            "Printed sheet number; applies Joel's precision-requirement override "
+            "when the sheet has one"
+        ),
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    # Imported here: the policy module itself imports this one.
+    from sanborn_placement_policy import precision_override as _precision_override
+
+    override = _precision_override(args.tile) if args.tile is not None else None
     source = args.source.expanduser().resolve()
     points = args.points.expanduser().resolve()
     output = args.output.expanduser().resolve()
@@ -911,7 +820,7 @@ def main() -> int:
     )
     diagnostics["target_location_check"] = location_check
     require_target_location(location_check)
-    warnings = fit_safety_warnings(diagnostics)
+    warnings = fit_safety_warnings(diagnostics, precision_override=override)
     if warnings:
         fail("Sheet fit safety gate failed: " + "; ".join(warnings))
 
@@ -920,8 +829,9 @@ def main() -> int:
         args.expected_target_bbox,
         args.expected_target_seed,
         args.max_target_seed_distance,
+        precision_override=override,
     )
-    affine_signature = affine_provenance_signature(
+    fit_signature = fit_provenance_signature(
         source_sha256_before,
         points_sha256_before,
         target_crs,
@@ -930,6 +840,7 @@ def main() -> int:
     )
 
     project_mtime_before = protected.stat().st_mtime_ns if protected else None
+    sweep_stale_partials(output, ledger)
     partial = output.with_name(f".{output.stem}.partial-{os.getpid()}{output.suffix}")
     partial_ledger = ledger.with_name(f".{ledger.name}.partial-{os.getpid()}")
 
@@ -978,7 +889,7 @@ def main() -> int:
                 "-mo",
                 f"{POINTS_METADATA_KEY}={points_sha256_before}",
                 "-mo",
-                f"{AFFINE_METADATA_KEY}={affine_signature}",
+                f"{AFFINE_METADATA_KEY}={fit_signature}",
                 "-mo",
                 f"{PIPELINE_METADATA_KEY}={PIPELINE_METADATA_VALUE}",
                 str(partial),
@@ -1012,7 +923,7 @@ def main() -> int:
         expected_embedded = {
             SOURCE_METADATA_KEY: source_sha256_before,
             POINTS_METADATA_KEY: points_sha256_before,
-            AFFINE_METADATA_KEY: affine_signature,
+            AFFINE_METADATA_KEY: fit_signature,
             PIPELINE_METADATA_KEY: PIPELINE_METADATA_VALUE,
         }
         for key, expected in expected_embedded.items():
@@ -1065,7 +976,7 @@ def main() -> int:
                 "warnings": warnings,
                 "distortion_override": False,
                 "safety_limits": safety_limits,
-                "affine_provenance_signature": affine_signature,
+                "affine_provenance_signature": fit_signature,
             },
             "output": {
                 "path": str(output),
@@ -1123,6 +1034,11 @@ def main() -> int:
             f"{diagnostics['metres_per_source_pixel']:.4f} m per source pixel; "
             f"rotation {diagnostics['rotation_degrees']:.2f} degrees"
         )
+        if override:
+            print(
+                f"Joel's precision-requirement override for Tile {args.tile} waived the "
+                "15 m leave-one-out limit."
+            )
         print(f"SHA-256: {record['output']['sha256']}")
         if protected:
             print(f"Protected QGIS project unchanged during run: {project_unchanged}")

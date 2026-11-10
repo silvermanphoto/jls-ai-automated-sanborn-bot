@@ -565,12 +565,31 @@ def street_labels(lines: Iterable[dict]) -> list[dict]:
     )
 
 
+# Time limits for the local text-reading and image programs. A run that takes
+# longer is tried once more, then stops with a plain message instead of hanging.
+TESSERACT_TIMEOUT_SECONDS = 300
+GDAL_TRANSLATE_TIMEOUT_SECONDS = 600
+
+
+def _run_with_timeout(command: list[str], timeout: int, **kwargs) -> subprocess.CompletedProcess:
+    """subprocess.run with a time limit and one retry on timeout."""
+    for attempt in range(2):
+        try:
+            return subprocess.run(command, check=True, timeout=timeout, **kwargs)
+        except subprocess.TimeoutExpired:
+            if attempt == 0:
+                print(f"{Path(command[0]).name} took over {timeout} seconds; trying once more.",
+                      file=sys.stderr)
+                continue
+            fail(f"{Path(command[0]).name} took over {timeout} seconds twice; stopped.")
+
+
 def _ocr_pass(arguments: tuple[Path, int, int, float]) -> tuple[int, int, str]:
     image_path, rotation, psm, minimum_confidence = arguments
     tesseract = require_program("tesseract")
-    result = subprocess.run(
+    result = _run_with_timeout(
         [tesseract, str(image_path), "stdout", "-l", "eng", "--psm", str(psm), "tsv"],
-        check=True,
+        TESSERACT_TIMEOUT_SECONDS,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
@@ -598,7 +617,7 @@ def scan(args: argparse.Namespace) -> int:
             fail(f"Preview does not exist: {preview}")
     else:
         preview = output.with_suffix(".ocr-preview.png")
-        subprocess.run(
+        _run_with_timeout(
             [
                 gdal_translate,
                 "-q",
@@ -610,7 +629,7 @@ def scan(args: argparse.Namespace) -> int:
                 str(source),
                 str(preview),
             ],
-            check=True,
+            GDAL_TRANSLATE_TIMEOUT_SECONDS,
         )
 
     # Street geometry and the printed-number gate both consume this disposable

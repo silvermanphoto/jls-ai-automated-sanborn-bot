@@ -55,7 +55,6 @@ def write_manifest(folder: Path, tile: int, **changes) -> Path:
     raster = folder / f"Sanborn 1911 -- Tile {tile}_georeferenced.tif"
     raster.write_bytes(f"test raster for tile {tile}".encode("utf-8"))
     raster_digest = file_sha256(raster)
-    sanborn_paper.write_vrt(raster)
     source = folder / f"source-{tile}.jp2"
     points = folder / f"points-{tile}.points"
     source.write_bytes(f"source-{tile}".encode("utf-8"))
@@ -135,6 +134,9 @@ def write_manifest(folder: Path, tile: int, **changes) -> Path:
             "sha256": points_digest,
         },
         "transformation": {
+            "type": sanborn_qgis_similarity_type(),
+            "fit_model": "similarity",
+            "pipeline": "local-first-similarity-v3",
             "target_crs": EXPECTED_CRS,
             "safety_limits": {
                 "expected_target_seed": [seed_x, seed_y],
@@ -185,7 +187,7 @@ def write_manifest(folder: Path, tile: int, **changes) -> Path:
     approval_token = hashlib.sha256(f"approval-{tile}".encode()).hexdigest()
     artifact_hashes = {key: artifacts[key]["sha256"] for key in REQUIRED_ARTIFACTS}
     review_record = {
-        "schema_version": 3,
+        "schema_version": 4,
         "approved": True,
         "approval_token": approval_token,
         "source": {**file_record(source), "width": 100, "height": 100},
@@ -247,6 +249,10 @@ def write_manifest(folder: Path, tile: int, **changes) -> Path:
     manifest = folder / f"tile-{tile:04d}.json"
     manifest.write_text(json.dumps(record), encoding="utf-8")
     return manifest
+
+
+def sanborn_qgis_similarity_type() -> str:
+    return "Similarity: rotation + uniform scale + shift, least squares over all measured points"
 
 
 def rewrite_ledger(manifest: Path, mutate) -> None:
@@ -343,6 +349,15 @@ class FakeGroup:
             return False
         self.removeChildNode(node)
         return True
+
+    def clone(self):
+        return FakeGroup([child.clone() for child in self._children], name=self._name)
+
+    def setExpanded(self, expanded):
+        self._expanded = expanded
+
+    def isExpanded(self):
+        return getattr(self, "_expanded", False)
 
 
 class FakeBridge:
@@ -567,6 +582,84 @@ class LiveRaster(FakeRasterLayer):
         self._valid = source not in LiveRaster.unswitchable
 
 
+class FakeMultiBandRenderer(FakeRenderer):
+    def __init__(self, provider=None, red=1, green=2, blue=3, opacity=1.0, alpha=-1):
+        super().__init__(opacity, alpha)
+        self.bands = (red, green, blue)
+
+    def setRedContrastEnhancement(self, value):
+        assert value is None
+
+    setGreenContrastEnhancement = setBlueContrastEnhancement = setRedContrastEnhancement
+
+    def redBand(self):
+        return self.bands[0]
+
+    def greenBand(self):
+        return self.bands[1]
+
+    def blueBand(self):
+        return self.bands[2]
+
+    def redContrastEnhancement(self):
+        return None
+
+    greenContrastEnhancement = blueContrastEnhancement = redContrastEnhancement
+
+    def clone(self):
+        return FakeMultiBandRenderer(None, *self.bands, self._opacity, self._alpha)
+
+
+class LiveRoot(FakeRoot):
+    def findGroups(self, recursive=False):
+        found = []
+
+        def visit(group):
+            for child in group.children():
+                if isinstance(child, FakeGroup):
+                    found.append(child)
+                    visit(child)
+
+        visit(self)
+        return found
+
+
+class LiveProject:
+    """Enough of QgsProject for prepare_sanborn_layers to run end to end."""
+
+    def __init__(self, filename, root, layers, dirty=False):
+        self._filename, self._root, self._dirty = filename, root, dirty
+        self.layers = {layer.id(): layer for layer in layers}
+        self.bridge = FakeBridge()
+        self.added = []
+
+    def fileName(self):
+        return self._filename
+
+    def crs(self):
+        return types.SimpleNamespace(authid=lambda: "EPSG:3857")
+
+    def isDirty(self):
+        return self._dirty
+
+    def layerTreeRoot(self):
+        return self._root
+
+    def mapLayers(self):
+        return dict(self.layers)
+
+    def addMapLayer(self, layer, add_to_tree=True):
+        self.layers[layer.id()] = layer
+        self.added.append(layer.id())
+        return layer
+
+    def removeMapLayer(self, layer_id):
+        self.layers.pop(layer_id)
+
+    def layerTreeRegistryBridge(self):
+        return self.bridge
+
+
 def live_helper_namespace():
     helpers = generated_helper_namespace()
     helpers["QgsRasterLayer"] = LiveRaster
@@ -576,56 +669,17 @@ def live_helper_namespace():
     return helpers
 
 
-def migration_namespace(plan, project):
-    core = types.ModuleType("qgis.core")
-    core.QgsDataProvider = type(
-        "FakeDataProvider", (), {"ProviderOptions": type("ProviderOptions", (), {})}
-    )
-    core.QgsProject = types.SimpleNamespace(instance=lambda: project)
-    core.QgsRasterLayer = LiveRaster
-    core.QgsRectangle = type("FakeRectangle", (), {"__init__": lambda self, *args: None})
-    qgis = types.ModuleType("qgis")
-    qgis.core = core
-    namespace = {"PLAN": plan}
-    definitions = sanborn_qgis._RECIPE_MIGRATION_BODY.split("SANBORN_RECIPE_SWITCH_RESULT =", 1)[0]
-    with mock.patch.dict(sys.modules, {"qgis": qgis, "qgis.core": core}):
-        exec(definitions, namespace)
-    LiveRaster.unreadable = set()
-    LiveRaster.unswitchable = set()
-    return namespace
-
-
-class MigrationRoot(FakeRoot):
-    def findGroups(self, recursive=False):
-        found = []
-
-        def visit(group):
-            for child in group.children():
-                if isinstance(child, FakeGroup) and not isinstance(child, FakeLayerNode):
-                    found.append(child)
-                    visit(child)
-
-        visit(self)
-        return found
-
-
-class FakeMigrationProject:
-    def __init__(self, filename, root):
-        self._filename, self._root = filename, root
-
-    def fileName(self):
-        return self._filename
-
-    def layerTreeRoot(self):
-        return self._root
-
-    def isDirty(self):
-        return True
-
-
 class SanbornQgisPlanTests(unittest.TestCase):
     def setUp(self):
         sanborn_qgis._SHA256_CACHE.clear()
+        # Never read Joel's real baked sheets; each test builds its own.
+        self.baked_folder = tempfile.TemporaryDirectory()
+        self.addCleanup(self.baked_folder.cleanup)
+        baked_patch = mock.patch.object(
+            sanborn_qgis, "BAKED_SHEET_FOLDER", Path(self.baked_folder.name)
+        )
+        baked_patch.start()
+        self.addCleanup(baked_patch.stop)
 
         def read_approval(review_dir, **kwargs):
             folder = Path(review_dir)
@@ -687,8 +741,8 @@ class SanbornQgisPlanTests(unittest.TestCase):
             item = {
                 "path": str(shared),
                 "raster_sha256": digest,
-                "vrt_path": str(shared),
-                "vrt_sha256": digest,
+                "placed_path": str(shared),
+                "placed_sha256": digest,
                 "ledger_path": str(shared),
                 "ledger_sha256": "0" * 64,
                 "source_path": str(shared),
@@ -908,15 +962,14 @@ class SanbornQgisPlanTests(unittest.TestCase):
                 "QgsProject.instance()",
                 "_sanborn_sha256(path)",
                 "_sanborn_verify_file_hashes(item)",
-                "_sanborn_preflight_project_tiles(project, root, incoming)",
+                "_sanborn_preflight_project_tiles(project, root, incoming, targets)",
                 "_sanborn_source_filename_tile(layer)",
                 "node.name()",
                 "project.fileName()",
                 "project.crs().authid()",
-                "QgsRasterLayer(recipe, item[\"layer_name\"] + \" verification probe\", \"gdal\")",
-                "_sanborn_require_recipe_pixels(probe, recipe)",
-                "_sanborn_switch_to_recipe(layer, item[\"vrt_path\"])",
-                "GDAL_VRT_PYTHON_TRUSTED_MODULES set to sanborn_paper",
+                "QgsRasterLayer(placed, item[\"layer_name\"] + \" verification probe\", \"gdal\")",
+                "_sanborn_replace_source(layer, item[\"placed_path\"])",
+                "def tile_number_from_name(name):",
                 "Qgis.RasterColorInterpretation.AlphaBand",
                 "project.addMapLayer(layer, False)",
                 "brightness.setBrightness",
@@ -950,9 +1003,11 @@ class SanbornQgisPlanTests(unittest.TestCase):
             self.assertGreater(second_hash_gate, prepare.index("# Postconditions:"))
             self.assertGreater(second_hash_gate, first_mutation)
             self.assertLess(
-                prepare.index("_sanborn_preflight_project_tiles(project, root, incoming)"),
+                prepare.index("_sanborn_preflight_project_tiles(project, root, incoming, targets)"),
                 first_mutation,
             )
+            self.assertNotIn("clean.vrt", code)
+            self.assertNotIn("GDAL_VRT", code)
 
     def test_generated_code_contains_whole_project_identity_and_rollback_gates(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -981,7 +1036,7 @@ class SanbornQgisPlanTests(unittest.TestCase):
             {"mapLayers": lambda self: {conflicting.id(): conflicting}},
         )()
         incoming = {
-            154: {"path": "/tmp/current/Sanborn 1911 -- Tile 154_georeferenced.tif"}
+            154: {"placed_path": "/tmp/current/Sanborn 1911 -- Tile 154_georeferenced.tif"}
         }
         with self.assertRaisesRegex(RuntimeError, "points to a different raster"):
             helpers["_sanborn_preflight_project_tiles"](project, root, incoming)
@@ -1029,7 +1084,7 @@ class SanbornQgisPlanTests(unittest.TestCase):
             helpers["_sanborn_preflight_project_tiles"](project, FakeRoot([group]), incoming)
             # Exercise the same post-insertion checks and ordering used by live
             # import, preserving both existing objects and their relative order.
-            added = FakeRasterLayer(incoming[495]["path"], "Sanborn 1911 - tile 495", "new-495")
+            added = FakeRasterLayer(incoming[495]["placed_path"], "Sanborn 1911 - tile 495", "new-495")
             group.insertChildNode(0, FakeLayerNode(added))
             earlier = FakeRasterLayer("/tmp/Tile 236.tif", "Sanborn 1911 - tile 236", "earlier-236")
             group.insertChildNode(0, FakeLayerNode(earlier))
@@ -1116,7 +1171,7 @@ class SanbornQgisPlanTests(unittest.TestCase):
     def test_quadrant_subfolder_is_chosen_by_printed_tile_number(self):
         helpers = self._quadrant_helpers()
         self.assertEqual([folder["name"] for folder in helpers["PLAN"]["subfolders"]],
-                         ["NORTHEAST ATL", "NORTHWEST ATL", "SOUTHEAST ATL", "SOUTHWEST ATL"])
+                         ["NORTHWEST ATL", "NORTHEAST ATL", "SOUTHWEST ATL", "SOUTHEAST ATL"])
         expected = {1: "NORTHWEST ATL", 90: "NORTHWEST ATL", 99: "NORTHWEST ATL",
                     100: "NORTHEAST ATL", 151: "NORTHEAST ATL", 252: "NORTHEAST ATL",
                     299: "NORTHEAST ATL", 300: "SOUTHWEST ATL", 301: "SOUTHWEST ATL",
@@ -1147,9 +1202,10 @@ class SanbornQgisPlanTests(unittest.TestCase):
         for tile in (486, 12, 310, 236):
             container = helpers["_sanborn_sheet_container"](group, tile)
             container.insertChildNode(0, self._sheet(tile))
+        # The finished master's order, top to bottom (check_master.py).
         self.assertEqual([folder.name() for folder in group.children()],
-                         ["NORTHEAST ATL", "NORTHWEST ATL", "SOUTHEAST ATL", "SOUTHWEST ATL"])
-        self.assertIs(helpers["_sanborn_sheet_container"](group, 20), group.children()[1])
+                         ["NORTHWEST ATL", "NORTHEAST ATL", "SOUTHWEST ATL", "SOUTHEAST ATL"])
+        self.assertIs(helpers["_sanborn_sheet_container"](group, 20), group.children()[0])
         self.assertEqual(len(group.children()), 4)
         helpers["_sanborn_check_group_contents"](group, {})
 
@@ -1158,19 +1214,19 @@ class SanbornQgisPlanTests(unittest.TestCase):
         northeast = FakeGroup([self._sheet(tile) for tile in (252, 151, 236)], name="NORTHEAST ATL")
         northwest = FakeGroup([self._sheet(tile) for tile in (90, 4)], name="NORTHWEST ATL")
         southeast = FakeGroup([self._sheet(tile) for tile in (505, 486, 495)], name="SOUTHEAST ATL")
-        group = FakeGroup([northeast, northwest, southeast], name=GROUP_NAME)
+        group = FakeGroup([northwest, northeast, southeast], name=GROUP_NAME)
         layers = [node.layer() for folder in group.children() for node in folder.children()]
         bridge = FakeBridge()
         project = types.SimpleNamespace(mapLayers=lambda: {layer.id(): layer for layer in layers},
                                         layerTreeRegistryBridge=lambda: bridge)
         order = helpers["_sanborn_numeric_order"](project, group)
-        self.assertEqual(order, [151, 236, 252, 4, 90, 486, 495, 505])
+        self.assertEqual(order, [4, 90, 151, 236, 252, 486, 495, 505])
         self.assertEqual(helpers["_sanborn_folder_order"](group), [
-            ("NORTHEAST ATL", [151, 236, 252]),
             ("NORTHWEST ATL", [4, 90]),
+            ("NORTHEAST ATL", [151, 236, 252]),
             ("SOUTHEAST ATL", [486, 495, 505]),
         ])
-        self.assertEqual(group.children(), [northeast, northwest, southeast])
+        self.assertEqual(group.children(), [northwest, northeast, southeast])
         self.assertTrue(bridge.isEnabled())
 
     def test_every_sheet_legend_in_every_quadrant_folder_is_collapsed(self):
@@ -1218,12 +1274,12 @@ class SanbornQgisPlanTests(unittest.TestCase):
         northwest = FakeGroup([self._sheet(37)], name="NORTHWEST ATL")
         southeast = FakeGroup([self._sheet(486)], name="SOUTHEAST ATL (#451-549)")
         southwest = FakeGroup([self._sheet(301)], name="SOUTHWEST ATL (#301-397)")
-        group = FakeGroup([index, northeast, northwest, southeast, southwest,
+        group = FakeGroup([index, northwest, northeast, southwest, southeast,
                            FakeGroup([inset], name="INSET MAPS"), merged], name=GROUP_NAME)
         helpers["_sanborn_check_group_contents"](group, {})
         self.assertEqual(helpers["_sanborn_folder_order"](group), [
-            ("NORTHEAST ATL", [151]), ("NORTHWEST ATL", [37]),
-            ("SOUTHEAST ATL", [486]), ("SOUTHWEST ATL", [301]),
+            ("NORTHWEST ATL", [37]), ("NORTHEAST ATL", [151]),
+            ("SOUTHWEST ATL", [301]), ("SOUTHEAST ATL", [486]),
         ])
         self.assertIs(helpers["_sanborn_sheet_container"](group, 505), southeast)
         self.assertEqual({node.layerId() for node in helpers["_sanborn_sheet_nodes"](group)},
@@ -1277,13 +1333,13 @@ class SanbornQgisPlanTests(unittest.TestCase):
     def test_preservation_does_not_weaken_incoming_path_or_registry_duplicate_guards(self):
         with tempfile.TemporaryDirectory() as temp:
             _, _, group, helpers = self._preserved_pair_fixture(Path(temp))
-            incoming = {495: {"path": "/tmp/Tile 495_current.tif",
-                              "vrt_path": "/tmp/Tile 495_current.clean.vrt"}}
+            incoming = {495: {"tile": 495, "placed_path": "/tmp/Tile 495_current.tif",
+                              "layer_name": "Sanborn 1911 - tile 495"}}
             other = FakeRasterLayer("/tmp/Tile 495_other.tif", "Tile 495", "other-495")
             project = types.SimpleNamespace(mapLayers=lambda: {other.id(): other})
             with self.assertRaisesRegex(RuntimeError, "points to a different raster"):
                 helpers["_sanborn_preflight_project_tiles"](project, FakeRoot([group, FakeLayerNode(other)]), incoming)
-            duplicates = [FakeRasterLayer(incoming[495]["path"], "Tile 495", str(index)) for index in range(2)]
+            duplicates = [FakeRasterLayer(incoming[495]["placed_path"], "Tile 495", str(index)) for index in range(2)]
             project = types.SimpleNamespace(mapLayers=lambda: {layer.id(): layer for layer in duplicates})
             with self.assertRaisesRegex(RuntimeError, "already registered more than once"):
                 helpers["_sanborn_preflight_raster"](project, incoming[495])
@@ -1306,7 +1362,7 @@ class SanbornQgisPlanTests(unittest.TestCase):
                     root.insertChildNode(0, FakeLayerNode(None, "Tile 486"))
                 project = types.SimpleNamespace(mapLayers=lambda: registry)
                 with self.assertRaisesRegex(RuntimeError, "exactly one full and one alpha"):
-                    helpers["_sanborn_preflight_project_tiles"](project, root, {495: {"path": "/tmp/Tile 495.tif"}})
+                    helpers["_sanborn_preflight_project_tiles"](project, root, {495: {"placed_path": "/tmp/Tile 495.tif"}})
 
     def test_preservation_loader_rejects_invalid_authorization_and_variant_identity(self):
         for change in ("missing-note", "same-role", "wrong-tile", "hash-change", "not-alpha-sibling"):
@@ -1371,204 +1427,255 @@ class SanbornQgisPlanTests(unittest.TestCase):
             self.assertEqual(set(payload), {"code"})
             self.assertEqual(payload["code"], generate_pyqgis_code(plan))
 
-    # --- paper recipe files (2026-09-29) ---
+    # --- placement into the finished master (2026-11-10) ---
 
-    def test_plan_carries_raster_and_verified_recipe_paths(self):
+    VIEWING_COPY = ("/tmp/LOD Viewing Copies 2026-10-04/{n:03d}_Sanborn 1911 -- Tile {tile}/"
+                    "Full resolution with eight LOD levels.vrt")
+
+    def _bake(self, tile):
+        baked = Path(self.baked_folder.name) / f"Sanborn 1911 -- Tile {tile}.tif"
+        baked.write_bytes(f"baked tile {tile}".encode())
+        return baked.resolve()
+
+    def _finished_master(self, temp, plan, *, check_only=False, dirty=False, extra_root=()):
+        """The master as ATLAS FINISHING.md 4c and check_master.py describe it."""
+        project_file = Path(temp) / "JLS Master Map File with 1911 Sanborns.qgz"
+        project_file.write_bytes(b"saved master")
+        plan = json.loads(json.dumps(plan))
+        plan["protected_project"] = str(project_file)
+        plan["index_layer_source"] = "/tmp/index.tif"
+        plan["check_only"] = check_only
+        helpers = live_helper_namespace()
+        helpers["PLAN"].clear()
+        helpers["PLAN"].update(plan)
+        helpers["QgsMultiBandColorRenderer"] = FakeMultiBandRenderer
+
+        def sheet(tile, n):
+            return FakeLayerNode(LiveRaster(self.VIEWING_COPY.format(n=n, tile=tile),
+                                            f"Sanborn 1911 - Tile {tile}", layer_id=f"sheet-{tile}"))
+
+        index = FakeLayerNode(LiveRaster("/tmp/index.tif", plan["index_layer"], layer_id="index"))
+        atlas = FakeLayerNode(LiveRaster("type=xyz&url=file:///1911%20SANBORN%20BAKED/tiles/{z}/{x}/{y}.webp",
+                                         "1911 Atlanta Sanborns - atlas", layer_id="atlas"))
+        inset = FakeLayerNode(LiveRaster(self.VIEWING_COPY.format(n=45, tile="154 INSET MAP"),
+                                         "Sanborn 1911 - Tile 154 INSET MAP", layer_id="inset-154"))
+        backing = FakeLayerNode(LiveRaster("/tmp/1911 Sanborns footprint (white backing).gpkg",
+                                           "1911 Sanborns - white backing", layer_id="backing"))
+        folders = [
+            FakeGroup([sheet(12, 1)], name="NORTHWEST ATL (#1-90)"),
+            FakeGroup([sheet(151, 2), sheet(154, 3), sheet(236, 4)], name="NORTHEAST ATL (#151-252)"),
+            FakeGroup([sheet(301, 5)], name="SOUTHWEST ATL (#301-325)"),
+            FakeGroup([sheet(486, 6)], name="SOUTHEAST ATL (#400-549)"),
+        ]
+        group = FakeGroup([atlas, *folders, FakeGroup([inset], name="INSET MAPS"), backing],
+                          name=GROUP_NAME)
+        group.setExpanded(True)
+        root = LiveRoot([*extra_root, index, group])
+        layers = [node.layer() for node in root.findLayers()]
+        project = LiveProject(str(project_file), root, layers, dirty=dirty)
+        helpers["QgsProject"] = types.SimpleNamespace(instance=lambda: project)
+        return helpers, project, root, group, project_file
+
+    @staticmethod
+    def _tree(root):
+        def walk(node):
+            if isinstance(node, FakeGroup):
+                return (node.name(), [walk(child) for child in node.children()])
+            return (node.name(), node.layerId(), node.layer().source() if node.layer() else None)
+        return walk(root)
+
+    def test_existing_sheet_on_a_viewing_copy_is_replaced_in_place_by_its_baked_file(self):
         with tempfile.TemporaryDirectory() as temp:
+            baked = self._bake(154)
             plan = build_plan([write_manifest(Path(temp), 154)])
             item = plan["tiles"][0]
-            recipe = Path(item["path"]).with_name(Path(item["path"]).stem + ".clean.vrt")
-            self.assertEqual(item["vrt_path"], str(recipe.resolve()))
-            self.assertEqual(item["vrt_sha256"], file_sha256(recipe))
-            self.assertTrue(item["path"].endswith("_georeferenced.tif"))
+            self.assertEqual((item["placed_path"], item["placed_kind"]), (str(baked), "baked"))
+            self.assertEqual(plan["warnings"], [])
+            helpers, project, root, group, project_file = self._finished_master(temp, plan)
+            layer = project.layers["sheet-154"]
+            folder = group.children()[2]
+            position = folder.children().index(next(n for n in folder.children() if n.layerId() == "sheet-154"))
+            mtime = project_file.stat().st_mtime_ns
+            with mock.patch("builtins.print"):
+                result = helpers["prepare_sanborn_layers"]()
+            self.assertEqual(result["replaced_tiles"], [154])
+            self.assertEqual((result["imported_tiles"], result["reused_tiles"]), ([], []))
+            self.assertEqual(result["placed_files"]["154"]["kind"], "baked")
+            self.assertIs(project.layers["sheet-154"], layer)
+            self.assertEqual(layer.source(), str(baked))
+            self.assertEqual(layer.name(), "Sanborn 1911 - Tile 154")
+            node = folder.children()[position]
+            self.assertEqual((node.layerId(), node.name()), ("sheet-154", "Sanborn 1911 - Tile 154"))
+            self.assertEqual([child.name() for child in group.children()][0], "1911 Atlanta Sanborns - atlas")
+            self.assertEqual(group.children()[-1].name(), "1911 Sanborns - white backing")
+            self.assertEqual(project.added, [])
+            self.assertEqual((layer.brightnessFilter().values, layer.renderer().alphaBand()), ([0, 1.0, 0], 4))
+            self.assertEqual(project.layers["inset-154"].source(), self.VIEWING_COPY.format(n=45, tile="154 INSET MAP"))
+            self.assertEqual(project_file.stat().st_mtime_ns, mtime)
 
-    def test_import_refuses_a_missing_edited_or_misnamed_recipe(self):
+    def test_check_only_reports_the_replacement_and_changes_nothing(self):
+        with tempfile.TemporaryDirectory() as temp:
+            baked = self._bake(154)
+            plan = build_plan([write_manifest(Path(temp), 154), write_manifest(Path(temp), 155)],
+                              check_only=True)
+            self.assertTrue(plan["check_only"])
+            helpers, project, root, group, _ = self._finished_master(temp, plan, check_only=True)
+            before = self._tree(root)
+            with mock.patch("builtins.print"):
+                result = helpers["prepare_sanborn_layers"]()
+            self.assertEqual(result["status"], "check-only")
+            self.assertEqual(result["would_add_tiles"], [155])
+            self.assertEqual([(r["tile"], r["to"]) for r in result["would_replace"]], [(154, str(baked))])
+            self.assertIn("LOD Viewing Copies", result["would_replace"][0]["from"])
+            self.assertEqual(result["group_action"], "would keep")
+            self.assertEqual(len(result["warnings"]), 1)
+            self.assertEqual(self._tree(root), before)
+            self.assertEqual(project.added, [])
+            self.assertEqual(project.layers["sheet-154"].data_source_calls, [])
+
+    def test_new_sheet_is_inserted_in_number_order_and_an_unbaked_raster_is_warned_about(self):
+        with tempfile.TemporaryDirectory() as temp:
+            plan = build_plan([write_manifest(Path(temp), 155)])
+            item = plan["tiles"][0]
+            self.assertEqual((item["placed_path"], item["placed_kind"]), (item["path"], "finished"))
+            self.assertRegex(plan["warnings"][0], "Tile 155: placing the unbaked finished raster.*color will differ")
+            helpers, project, root, group, _ = self._finished_master(temp, plan)
+            with mock.patch("builtins.print"):
+                result = helpers["prepare_sanborn_layers"]()
+            self.assertEqual((result["imported_tiles"], result["replaced_tiles"]), ([155], []))
+            self.assertEqual(result["warnings"], plan["warnings"])
+            northeast = group.children()[2]
+            self.assertEqual([helpers["_sanborn_tile_number"](n.name()) for n in northeast.children()],
+                             [151, 154, 155, 236])
+
+    def test_baked_file_on_another_grid_is_not_placed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            self._bake(154)
+            shifted = dict(FAKE_SHEET_FACTS, geotransform=[-9392990.0, 0.05, 0.0, 3996000.0, 0.0, -0.05])
+            self.facts_patch.stop()
+            with mock.patch.object(sanborn_paper, "read_raster_facts",
+                                   side_effect=lambda path: shifted
+                                   if Path(path).name == "Sanborn 1911 -- Tile 154.tif"
+                                   else FAKE_SHEET_FACTS):
+                plan = build_plan([write_manifest(Path(temp), 154)])
+            self.facts_patch.start()
+            self.assertEqual(plan["tiles"][0]["placed_kind"], "finished")
+            self.assertRegex(plan["warnings"][0], "not on the finished raster's grid")
+
+    def test_failed_replacement_rolls_back_source_name_style_and_tree(self):
+        with tempfile.TemporaryDirectory() as temp:
+            baked = self._bake(154)
+            plan = build_plan([write_manifest(Path(temp), 154)])
+            helpers, project, root, group, _ = self._finished_master(temp, plan)
+            layer = project.layers["sheet-154"]
+            original = layer.source()
+            layer.brightnessFilter().values[:] = [5, 1.1, 3]
+            before = self._tree(root)
+            LiveRaster.unswitchable = {str(baked)}
+            with mock.patch("builtins.print"), self.assertRaisesRegex(RuntimeError, "could not point"):
+                helpers["prepare_sanborn_layers"]()
+            self.assertEqual(layer.source(), original)
+            self.assertEqual(layer.name(), "Sanborn 1911 - Tile 154")
+            self.assertEqual(layer.brightnessFilter().values, [5, 1.1, 3])
+            self.assertEqual(self._tree(root), before)
+
+    def test_unsaved_project_is_refused_before_anything_changes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            self._bake(154)
+            plan = build_plan([write_manifest(Path(temp), 154)])
+            helpers, project, root, _, _ = self._finished_master(temp, plan, dirty=True)
+            before = self._tree(root)
+            with self.assertRaisesRegex(RuntimeError, "changes you have not saved"):
+                helpers["prepare_sanborn_layers"]()
+            self.assertEqual(self._tree(root), before)
+
+    def test_inset_and_helper_layers_never_block_a_sheet_but_a_stray_copy_does(self):
+        with tempfile.TemporaryDirectory() as temp:
+            self._bake(154)
+            plan = build_plan([write_manifest(Path(temp), 154)])
+            stray = FakeLayerNode(LiveRaster("/tmp/old/Sanborn 1911 -- Tile 154_georeferenced.tif",
+                                             "Sanborn 1911 -- Tile 154_georeferenced", layer_id="stray"))
+            helpers, *_ = self._finished_master(temp, plan, extra_root=(stray,))
+            with mock.patch("builtins.print"), self.assertRaisesRegex(RuntimeError, "points to a different raster"):
+                helpers["prepare_sanborn_layers"]()
+
+    def test_viewing_copy_tile_is_read_from_its_folder_and_must_agree_with_the_layer_name(self):
+        helpers = self._quadrant_helpers()
+        on_copy = LiveRaster(self.VIEWING_COPY.format(n=3, tile=154), "Sanborn 1911 - Tile 154")
+        self.assertEqual(helpers["_sanborn_source_filename_tile"](on_copy), 154)
+        wrong = LiveRaster(self.VIEWING_COPY.format(n=3, tile=236), "Sanborn 1911 - Tile 154")
+        group = FakeGroup([FakeGroup([FakeLayerNode(wrong)], name="NORTHEAST ATL")], name=GROUP_NAME)
+        with self.assertRaisesRegex(RuntimeError, "displays tile 154.*is tile 236"):
+            helpers["_sanborn_check_group_contents"](group, {})
+
+    def test_legacy_three_point_affine_evidence_is_never_placed_but_still_archives(self):
         with tempfile.TemporaryDirectory() as temp:
             manifest = write_manifest(Path(temp), 154)
-            record = json.loads(manifest.read_text(encoding="utf-8"))
-            recipe = sanborn_paper.vrt_path_for(record["path"])
-            recipe.unlink()
-            with self.assertRaisesRegex(ManifestError, "recipe file is missing.*backfill"):
+            record = json.loads(manifest.read_text())
+            review_json = Path(record["review_dir"]) / "review.json"
+            review = json.loads(review_json.read_text())
+            review["schema_version"] = 3
+            review_json.write_text(json.dumps(review))
+            record["review_sha256"] = file_sha256(review_json)
+            manifest.write_text(json.dumps(record))
+            with self.assertRaisesRegex(ManifestError, "old three-point affine stretch"):
                 build_plan([manifest])
-            sanborn_paper.write_vrt(record["path"])
-            recipe.chmod(0o644)
-            recipe.write_text(recipe.read_text(encoding="utf-8") + " ", encoding="utf-8")
-            with self.assertRaisesRegex(ManifestError, "does not match its sheet"):
+            self.assertEqual(sanborn_qgis.load_manifest(manifest, for_import=False)["tile"], 154)
+        with tempfile.TemporaryDirectory() as temp:
+            manifest = write_manifest(Path(temp), 154)
+            rewrite_ledger(manifest, lambda ledger: ledger["transformation"].update(
+                type="Polynomial 1 / global affine", fit_model=None, pipeline=None))
+            with self.assertRaisesRegex(ManifestError, "old three-point affine stretch"):
                 build_plan([manifest])
-            sanborn_paper.write_vrt(record["path"])
-            record["vrt_path"] = str(Path(temp) / "elsewhere.clean.vrt")
-            manifest.write_text(json.dumps(record), encoding="utf-8")
-            with self.assertRaisesRegex(ManifestError, "vrt_path is not the raster's adjacent"):
-                build_plan([manifest])
-            # Archive validation of a withdrawn result never needs a recipe.
-            recipe.unlink()
-            self.assertEqual(sanborn_qgis.load_manifest(manifest, for_import=False)["vrt_path"], None)
+            self.assertEqual(sanborn_qgis.load_manifest(manifest, for_import=False)["tile"], 154)
 
-    def test_a_layer_on_the_recipe_counts_as_the_same_sheet_as_its_raster(self):
-        helpers = live_helper_namespace()
-        tif = "/tmp/Sanborn 1911 -- Tile 154_georeferenced.tif"
-        recipe = "/tmp/Sanborn 1911 -- Tile 154_georeferenced.clean.vrt"
-        incoming = {154: {"path": tif, "vrt_path": recipe}}
-        on_recipe = LiveRaster(recipe, "Sanborn 1911 - Tile 154", layer_id="on-recipe")
-        group = FakeGroup([FakeLayerNode(on_recipe)])
-        helpers["_sanborn_check_group_contents"](group, incoming)
-        project = types.SimpleNamespace(mapLayers=lambda: {on_recipe.id(): on_recipe})
-        helpers["_sanborn_preflight_project_tiles"](project, FakeRoot([group]), incoming)
+    def test_missing_quadrant_folder_is_created_between_its_neighbors_beside_the_atlas_helpers(self):
+        helpers = self._quadrant_helpers()
+        atlas = FakeLayerNode(FakeRasterLayer("tiles", "1911 Atlanta Sanborns - atlas", "atlas"))
+        backing = FakeLayerNode(FakeRasterLayer("backing", "1911 Sanborns - white backing", "backing"))
+        group = FakeGroup([atlas, FakeGroup(name="NORTHWEST ATL"), FakeGroup(name="NORTHEAST ATL (#151-252)"),
+                           FakeGroup(name="SOUTHEAST ATL"), FakeGroup(name="INSET MAPS"), backing],
+                          name=GROUP_NAME)
+        self.assertIsNone(helpers["_sanborn_sheet_container"](group, 310, create=False))
+        created = helpers["_sanborn_sheet_container"](group, 310)
+        self.assertEqual([child.name() for child in group.children()],
+                         ["1911 Atlanta Sanborns - atlas", "NORTHWEST ATL", "NORTHEAST ATL (#151-252)",
+                          "SOUTHWEST ATL", "SOUTHEAST ATL", "INSET MAPS", "1911 Sanborns - white backing"])
+        self.assertIs(helpers["_sanborn_sheet_container"](group, 310), created)
+        empty = FakeGroup([atlas.clone(), FakeGroup(name="INSET MAPS"), backing.clone()], name=GROUP_NAME)
+        helpers["_sanborn_sheet_container"](empty, 486)
+        self.assertEqual([child.name() for child in empty.children()][1], "SOUTHEAST ATL")
 
-        on_raster = LiveRaster(tif, "Sanborn 1911 - Tile 154", layer_id="on-raster")
-        both = FakeGroup([FakeLayerNode(on_recipe), FakeLayerNode(on_raster)])
-        with self.assertRaisesRegex(RuntimeError, "more than once"):
-            helpers["_sanborn_check_group_contents"](both, incoming)
-        project = types.SimpleNamespace(mapLayers=lambda: {on_recipe.id(): on_recipe, on_raster.id(): on_raster})
-        with self.assertRaisesRegex(RuntimeError, "already registered more than once"):
-            helpers["_sanborn_preflight_raster"](project, dict(incoming[154], layer_name="Sanborn 1911 - Tile 154"))
-
-    def test_a_reused_raster_layer_is_switched_to_its_recipe_in_place(self):
-        helpers = live_helper_namespace()
-        tif = "/tmp/Sanborn 1911 -- Tile 154_georeferenced.tif"
-        recipe = "/tmp/Sanborn 1911 -- Tile 154_georeferenced.clean.vrt"
-        item = {"path": tif, "vrt_path": recipe, "layer_name": "Sanborn 1911 - Tile 154"}
-        existing = LiveRaster(tif, "Sanborn 1911 - Tile 154", layer_id="existing")
-        project = types.SimpleNamespace(mapLayers=lambda: {existing.id(): existing})
-        entry = helpers["_sanborn_preflight_raster"](project, item)
-        self.assertIs(entry["layer"], existing)
-        self.assertTrue(entry["already_registered"])
-        self.assertTrue(entry["switch_to_recipe"])
-        self.assertEqual(existing.data_source_calls, [])
-        helpers["_sanborn_switch_to_recipe"](existing, recipe)
-        self.assertEqual(helpers["_sanborn_layer_source"](existing), helpers["_sanborn_canonical"](recipe))
-        self.assertEqual((existing.id(), existing.name()), ("existing", "Sanborn 1911 - Tile 154"))
-        # A layer already on its recipe needs no switch; a new sheet uses the recipe probe.
-        self.assertFalse(helpers["_sanborn_preflight_raster"](project, item)["switch_to_recipe"])
-        fresh = helpers["_sanborn_preflight_raster"](types.SimpleNamespace(mapLayers=dict), item)
-        self.assertFalse(fresh["already_registered"])
-        self.assertEqual(fresh["layer"].source(), helpers["_sanborn_canonical"](recipe))
-
-    def test_missing_qgis_settings_stop_before_any_change_with_plain_instructions(self):
-        helpers = live_helper_namespace()
-        tif = "/tmp/Sanborn 1911 -- Tile 154_georeferenced.tif"
-        recipe = "/tmp/Sanborn 1911 -- Tile 154_georeferenced.clean.vrt"
-        existing = LiveRaster(tif, "Sanborn 1911 - Tile 154", layer_id="existing")
-        project = types.SimpleNamespace(mapLayers=lambda: {existing.id(): existing})
-        LiveRaster.unreadable = {helpers["_sanborn_canonical"](recipe)}
-        with self.assertRaisesRegex(
-            RuntimeError,
-            "GDAL_VRT_ENABLE_PYTHON set to TRUSTED_MODULES and GDAL_VRT_PYTHON_TRUSTED_MODULES "
-            "set to sanborn_paper.*Nothing was changed",
-        ):
-            helpers["_sanborn_preflight_raster"](
-                project, {"path": tif, "vrt_path": recipe, "layer_name": "Sanborn 1911 - Tile 154"}
-            )
-        self.assertEqual(existing.data_source_calls, [])
-        self.assertFalse(existing.reloaded)
-
-    def test_rollback_points_a_switched_layer_back_at_its_raster(self):
-        helpers = live_helper_namespace()
-        tif = "/tmp/Sanborn 1911 -- Tile 154_georeferenced.tif"
-        recipe = "/tmp/Sanborn 1911 -- Tile 154_georeferenced.clean.vrt"
-        existing = LiveRaster(tif, "Sanborn 1911 - Tile 154", layer_id="existing")
-        project = types.SimpleNamespace(mapLayers=lambda: {existing.id(): existing})
-        prepared = {154: {"layer": existing, "already_registered": True}}
-        rollback = helpers["_sanborn_snapshot_rollback"](FakeRoot([]), None, prepared)
-        helpers["_sanborn_switch_to_recipe"](existing, recipe)
-        errors = helpers["_sanborn_restore_after_failure"](project, FakeRoot([]), rollback)
-        self.assertEqual(errors, [])
-        self.assertEqual(existing.source(), tif)
-        self.assertEqual(existing.providerType(), "gdal")
-
-    def _migration_fixture(self, folder):
-        sheets = {}
-        for tile in (154, 155, 157):
-            tif = folder / f"Sanborn 1911 -- Tile {tile}_georeferenced.tif"
-            tif.write_bytes(f"sheet {tile}".encode())
-            sheets[tile] = tif
-        for tile in (154, 157):
-            sanborn_paper.write_vrt(sheets[tile])
-        edited = sanborn_paper.vrt_path_for(sheets[157])
-        edited.chmod(0o644)
-        edited.write_text("edited", encoding="utf-8")
-        plan = sanborn_qgis.build_recipe_migration_plan([folder])
-        return sheets, plan
-
-    def test_migration_plan_lists_only_verified_recipes_and_never_saves(self):
+    def test_check_only_command_takes_no_backup_and_marks_the_plan(self):
         with tempfile.TemporaryDirectory() as temp:
-            sheets, plan = self._migration_fixture(Path(temp))
-            self.assertEqual([Path(r["path"]).name for r in plan["recipes"]], [sheets[154].name])
-            self.assertEqual([Path(r["path"]).name for r in plan["unverified"]], [sheets[157].name])
-            self.assertIs(plan["save_project"], False)
-            code = sanborn_qgis.generate_recipe_migration_code(plan)
-            compile(code, "<recipe-migration>", "exec")
-            for forbidden in ("project.write(", "QgsProject.write", "saveProject("):
-                self.assertNotIn(forbidden, code)
-
-    def _migration_project(self, sheets, plan, extra=()):
-        layers = [LiveRaster(str(sheets[tile].resolve()), f"Sanborn 1911 - Tile {tile}", layer_id=f"t{tile}")
-                  for tile in (154, 155, 157)]
-        already = LiveRaster(str(sheets[154].with_name("Sanborn 1911 -- Tile 156_georeferenced.clean.vrt")),
-                             "Sanborn 1911 - Tile 156", layer_id="t156")
-        folder_node = FakeRoot([FakeLayerNode(layer) for layer in (*layers, already, *extra)], name="NORTHEAST ATL")
-        group = FakeRoot([folder_node], name=GROUP_NAME)
-        root = MigrationRoot([group])
-        project = FakeMigrationProject(plan["protected_project"], root)
-        return layers, project
-
-    def test_migration_switches_verified_sheets_and_reports_the_rest(self):
-        with tempfile.TemporaryDirectory() as temp:
-            sheets, plan = self._migration_fixture(Path(temp))
-            layers, project = self._migration_project(sheets, plan)
-            namespace = migration_namespace(plan, project)
-            with mock.patch("builtins.print"):
-                result = namespace["switch_sanborn_sheets_to_recipes"]()
-            self.assertEqual((result["switched"], result["skipped"], result["failed"]), (1, 3, 0))
-            self.assertEqual(result["switched_layers"], ["Sanborn 1911 - Tile 154"])
-            reasons = " | ".join(entry["reason"] for entry in result["skipped_layers"])
-            self.assertIn("no paper recipe file", reasons)
-            self.assertIn("does not verify", reasons)
-            self.assertIn("already draws through its paper recipe file", reasons)
-            self.assertTrue(layers[0].source().endswith("Tile 154_georeferenced.clean.vrt"))
-            self.assertEqual(layers[0].name(), "Sanborn 1911 - Tile 154")
-            self.assertEqual(layers[1].data_source_calls, [])
-            self.assertFalse(result["save_project"])
-
-    def test_migration_rolls_back_every_switch_when_one_fails(self):
-        with tempfile.TemporaryDirectory() as temp:
-            folder = Path(temp)
-            sheets, _ = self._migration_fixture(folder)
-            sheets[158] = folder / "Sanborn 1911 -- Tile 158_georeferenced.tif"
-            sheets[158].write_bytes(b"sheet 158")
-            sanborn_paper.write_vrt(sheets[158])
-            plan = sanborn_qgis.build_recipe_migration_plan([folder])
-            extra = LiveRaster(str(sheets[158].resolve()), "Sanborn 1911 - Tile 158", layer_id="t158")
-            layers, project = self._migration_project(sheets, plan, extra=(extra,))
-            namespace = migration_namespace(plan, project)
-            LiveRaster.unswitchable = {str(sanborn_paper.vrt_path_for(sheets[158].resolve()))}
-            with mock.patch("builtins.print"), self.assertRaisesRegex(RuntimeError, "could not switch"):
-                namespace["switch_sanborn_sheets_to_recipes"]()
-            self.assertEqual(layers[0].source(), str(sheets[154].resolve()))
-            self.assertEqual(extra.source(), str(sheets[158].resolve()))
-
-    def test_migration_stops_before_any_switch_when_qgis_settings_are_missing(self):
-        with tempfile.TemporaryDirectory() as temp:
-            sheets, plan = self._migration_fixture(Path(temp))
-            layers, project = self._migration_project(sheets, plan)
-            namespace = migration_namespace(plan, project)
-            LiveRaster.unreadable = {str(sanborn_paper.vrt_path_for(sheets[154]).resolve())}
-            with self.assertRaisesRegex(RuntimeError, "GDAL_VRT_PYTHON_TRUSTED_MODULES"):
-                namespace["switch_sanborn_sheets_to_recipes"]()
-            self.assertEqual(layers[0].data_source_calls, [])
-
-    def test_migration_cli_prints_code_without_archiving_in_tests(self):
-        with tempfile.TemporaryDirectory() as temp:
-            self._migration_fixture(Path(temp))
+            manifest = write_manifest(Path(temp), 154)
             out, err = io.StringIO(), io.StringIO()
-            with mock.patch("sys.stdout", out), mock.patch("sys.stderr", err), mock.patch.object(
-                sanborn_qgis.sanborn_archive, "archive_project"
-            ) as archive:
-                code = sanborn_qgis.main(["migrate-to-recipes", "--folder", temp, "--skip-archive"])
-            self.assertEqual(code, 0)
+            with mock.patch.object(sanborn_qgis.sanborn_archive, "archive_project") as archive, \
+                    mock.patch("sys.stdout", out), mock.patch("sys.stderr", err):
+                self.assertEqual(sanborn_qgis.main([str(manifest), "--emit-code", "--check-only"]), 0)
             archive.assert_not_called()
-            self.assertIn("SANBORN_RECIPE_SWITCH_RESULT = switch_sanborn_sheets_to_recipes()", out.getvalue())
-            self.assertIn("1 sheets have a verified paper recipe file; 1 recipe files do not verify", err.getvalue())
+            self.assertIn('"check_only":true', out.getvalue())
+            self.assertIn("placing the unbaked finished raster", err.getvalue())
+
+    def test_collection_option_drives_the_plan_not_only_the_backup(self):
+        import dataclasses
+        other = dataclasses.replace(sanborn_qgis.COLLECTION, group_name="TEST SANBORNS")
+        with tempfile.TemporaryDirectory() as temp:
+            manifest = write_manifest(Path(temp), 154, group="TEST SANBORNS")
+            with self.assertRaises(ManifestError):
+                build_plan([manifest])
+            plan = build_plan([manifest], collection=other)
+            self.assertEqual(plan["group"], "TEST SANBORNS")
+            with mock.patch.object(sanborn_qgis.sanborn_collections, "get", return_value=other), \
+                    mock.patch("sys.stdout", io.StringIO()), mock.patch("sys.stderr", io.StringIO()):
+                self.assertEqual(sanborn_qgis.main([str(manifest)]), 0)
+
+    def test_generated_tile_parser_is_the_module_parser(self):
+        helpers = generated_helper_namespace()
+        for name in ("Sanborn 1911 -- Tile 196_georeferenced", "1911 Sanborn 485 Shmuel",
+                     "1911 Sanborn Index Orthorectified", "045_Sanborn 1911 -- Tile 160 INSET MAP"):
+            self.assertEqual(helpers["_sanborn_tile_number"](name), tile_number_from_name(name))
+        self.assertNotIn("@TILE_NUMBER_FUNCTION@", sanborn_qgis._PYQGIS_BODY)
 
 
 if __name__ == "__main__":

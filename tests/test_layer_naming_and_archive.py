@@ -211,17 +211,20 @@ class ArchiveTests(unittest.TestCase):
             "JLS Master Map File 07.27.26.qgz",
         )
 
-    def test_keeps_exactly_one_copy_per_day(self):
+    def test_second_backup_on_one_day_keeps_the_first(self):
         first, replaced_first = sanborn_archive.archive_project(
             self.project, archive_dir=self.archive_dir, commit=False
         )
         self.assertFalse(replaced_first)
+        before = first.read_bytes()
+        self.project.write_bytes(b"changed after the first placement")
         second, replaced_second = sanborn_archive.archive_project(
             self.project, archive_dir=self.archive_dir, commit=False
         )
-        self.assertTrue(replaced_second)
-        self.assertEqual(first, second)
-        self.assertEqual(len(list(self.archive_dir.iterdir())), 1)
+        self.assertFalse(replaced_second)
+        self.assertNotEqual(first, second)
+        self.assertEqual(first.read_bytes(), before)
+        self.assertEqual(len(list(self.archive_dir.iterdir())), 2)
 
     def test_separate_days_are_separate_files(self):
         sanborn_archive.archive_project(
