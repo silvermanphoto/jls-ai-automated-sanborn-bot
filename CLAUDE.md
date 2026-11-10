@@ -169,7 +169,7 @@ Full account, rationale and commands: `ATLAS FINISHING.md`. The rules that must 
 - A hole whose rim labels all name one sheet means that sheet is misplaced (Tile 353, 2026-09-30). Rough seeds ("mean of neighbours") need checking.
 - Restart QGIS after changing the paper module; reloading it in place crashes QGIS. QGIS opens on downtown Atlanta via its `startup.py`.
 
-## Version 1.31 — November 2026 review (on branch `claude/sanborn-review-2026-11` until Joel merges it)
+## Version 1.31 — November 2026 review (on main since 2026-11-10)
 
 - Placement into the finished master: the importer finds a sheet's layer by name and tile number inside the quadrant folders whatever file it draws from, replaces that layer's source in place (reported as a replace) or inserts a new sheet in number order, ignores INSET MAPS and the helper layers, and no longer needs the `.clean.vrt` recipe. It places the baked `full_jpeg` file when its corners match the finished raster within a pixel, otherwise the finished raster with a warning that its color differs until baked. `sanborn_qgis.py ... --check-only` runs every check against the open project and changes nothing. Not yet run against live QGIS: do a `--check-only` pass on the first re-fitted sheet before a real placement, and run `check_master.py` after. Open points from the build: a brand-new sheet is named "Sanborn 1911 - tile N" (lower-case t), which `check_master.py` does not count; `finish` still writes the old recipe file; whether QGIS reports a baked JPEG with a mask as four bands with band 4 as alpha is unverified.
 - Placement refuses evidence from the old three-point fit (review schema below 4 or a ledger without the similarity fit).
